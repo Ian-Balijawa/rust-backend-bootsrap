@@ -346,46 +346,87 @@ async fn postgres_redis_and_file_roundtrip() {
     let (first_refresh, _) = crate::service::auth::create_session(&db, signup_user.id)
         .await
         .unwrap();
-    let refreshed = user_app.clone().oneshot(
-        Request::builder().uri("/refresh").method("POST")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({"refresh_token": &first_refresh}).to_string()))
-            .unwrap()
-    ).await.unwrap();
+    let refreshed = user_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/refresh")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"refresh_token": &first_refresh}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(refreshed.status(), StatusCode::OK);
     let refreshed_body = to_bytes(refreshed.into_body(), 4096).await.unwrap();
     let refreshed_json: serde_json::Value = serde_json::from_slice(&refreshed_body).unwrap();
     let second_refresh = refreshed_json["data"]["refresh_token"].as_str().unwrap();
     let access_token = refreshed_json["data"]["token"].as_str().unwrap();
-    assert!(crate::service::auth::authenticate_access(&db, &state.config, access_token)
-        .await.unwrap().is_some());
-    let reused = user_app.clone().oneshot(
-        Request::builder().uri("/refresh").method("POST")
-            .header("content-type", "application/json")
-            .body(Body::from(serde_json::json!({"refresh_token": &first_refresh}).to_string()))
+    assert!(
+        crate::service::auth::authenticate_access(&db, &state.config, access_token)
+            .await
             .unwrap()
-    ).await.unwrap();
+            .is_some()
+    );
+    let reused = user_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/refresh")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"refresh_token": &first_refresh}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(reused.status(), StatusCode::UNAUTHORIZED);
-    assert!(crate::repository::session::find_valid(&db, second_refresh)
-        .await.unwrap().is_none());
+    assert!(
+        crate::repository::session::find_valid(&db, second_refresh)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     let (signout_refresh, _) = crate::service::auth::create_session(&db, signup_user.id)
-        .await.unwrap();
-    let (signout_access, _) = crate::service::auth::issue_access_token(&db, &state.config, signup_user.id)
-        .await.unwrap();
-    let signed_out = user_app.clone().oneshot(
-        Request::builder().uri("/signout").method("POST")
-            .header("content-type", "application/json")
-            .header("authorization", format!("Bearer {signout_access}"))
-            .body(Body::from(serde_json::json!({"refresh_token": signout_refresh}).to_string()))
-            .unwrap()
-    ).await.unwrap();
+        .await
+        .unwrap();
+    let (signout_access, _) =
+        crate::service::auth::issue_access_token(&db, &state.config, signup_user.id)
+            .await
+            .unwrap();
+    let signed_out = user_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/signout")
+                .method("POST")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {signout_access}"))
+                .body(Body::from(
+                    serde_json::json!({"refresh_token": signout_refresh}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(signed_out.status(), StatusCode::OK);
-    let denied = user_app.clone().oneshot(
-        Request::builder().uri("/me")
-            .header("authorization", format!("Bearer {signout_access}"))
-            .body(Body::empty()).unwrap()
-    ).await.unwrap();
+    let denied = user_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/me")
+                .header("authorization", format!("Bearer {signout_access}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
     assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
 
     let reset_token = format!(

@@ -34,11 +34,17 @@ pub async fn insert<C: ConnectionTrait>(
     Ok(())
 }
 
-pub async fn find_any<C: ConnectionTrait>(db: &C, token: &str) -> Result<Option<session::Model>, DbErr> {
+pub async fn find_any<C: ConnectionTrait>(
+    db: &C,
+    token: &str,
+) -> Result<Option<session::Model>, DbErr> {
     session::Entity::find_by_id(token_hash(token)).one(db).await
 }
 
-pub async fn find_valid<C: ConnectionTrait>(db: &C, token: &str) -> Result<Option<session::Model>, DbErr> {
+pub async fn find_valid<C: ConnectionTrait>(
+    db: &C,
+    token: &str,
+) -> Result<Option<session::Model>, DbErr> {
     session::Entity::find_by_id(token_hash(token))
         .filter(session::Column::ExpiresAt.gt(Utc::now()))
         .filter(session::Column::RevokedAt.is_null())
@@ -69,7 +75,11 @@ pub async fn revoke_family<C: ConnectionTrait>(db: &C, family_id: &str) -> Resul
     Ok(())
 }
 
-pub async fn revoke_for_user<C: ConnectionTrait>(db: &C, user_id: i32, token: &str) -> Result<(), DbErr> {
+pub async fn revoke_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i32,
+    token: &str,
+) -> Result<(), DbErr> {
     session::Entity::update_many()
         .col_expr(session::Column::RevokedAt, Expr::value(Utc::now()))
         .filter(session::Column::Token.eq(token_hash(token)))

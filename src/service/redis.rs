@@ -97,7 +97,10 @@ pub async fn access_revoked(redis: &ConnectionManager, token: &str) -> redis::Re
 }
 
 pub async fn revoke_access(redis: &ConnectionManager, token: &str) -> redis::RedisResult<()> {
-    let _: () = redis.clone().set_ex(revoked_access_key(token), 1_u8, 15 * 60).await?;
+    let _: () = redis
+        .clone()
+        .set_ex(revoked_access_key(token), 1_u8, 15 * 60)
+        .await?;
     Ok(())
 }
 

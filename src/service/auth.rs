@@ -34,7 +34,10 @@ fn new_refresh_token() -> String {
 }
 
 fn role_for_permissions(permissions: &[String]) -> &'static str {
-    if permissions.iter().any(|permission| permission == "user:manage") {
+    if permissions
+        .iter()
+        .any(|permission| permission == "user:manage")
+    {
         "admin"
     } else {
         "user"
@@ -233,7 +236,9 @@ pub async fn authenticate_access(
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_issuer(&[&config.jwt_issuer]);
     validation.set_audience(&[&config.jwt_audience]);
-    validation.required_spec_claims.extend(["sub", "iss", "aud"].map(str::to_string));
+    validation
+        .required_spec_claims
+        .extend(["sub", "iss", "aud"].map(str::to_string));
     validation.leeway = 0;
     let Ok(decoded) = decode::<AccessClaims>(token, &key, &validation) else {
         return Ok(None);
@@ -267,7 +272,11 @@ pub async fn authenticate_access(
     }))
 }
 
-pub async fn signout(db: &DatabaseConnection, user_id: i32, refresh_token: &str) -> Result<(), DbErr> {
+pub async fn signout(
+    db: &DatabaseConnection,
+    user_id: i32,
+    refresh_token: &str,
+) -> Result<(), DbErr> {
     repository::session::revoke_for_user(db, user_id, refresh_token).await
 }
 
@@ -319,9 +328,15 @@ pub async fn refresh(
     }
     let refresh_token = new_refresh_token();
     let refresh_expires_at = Utc::now() + Duration::days(REFRESH_DAYS);
-    repository::session::insert(&txn, &refresh_token, session.user_id, refresh_expires_at, &family_id)
-        .await
-        .map_err(anyhow::Error::from)?;
+    repository::session::insert(
+        &txn,
+        &refresh_token,
+        session.user_id,
+        refresh_expires_at,
+        &family_id,
+    )
+    .await
+    .map_err(anyhow::Error::from)?;
     txn.commit().await.map_err(anyhow::Error::from)?;
     let (access_token, expires_at) = issue_access_token(db, config, user.id).await?;
     Ok(LoginResult {

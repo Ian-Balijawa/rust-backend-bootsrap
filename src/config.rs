@@ -78,11 +78,16 @@ impl Config {
             app_env == "development" || app_env == "production",
             "APP_ENV must be development or production"
         );
-        let jwt_secret = env::var("JWT_SECRET")
-            .map_err(|_| anyhow::anyhow!("missing JWT_SECRET"))?;
-        anyhow::ensure!(jwt_secret.len() >= 32, "JWT_SECRET must be at least 32 bytes");
-        let jwt_issuer = env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-backend-bootstrap".to_string());
-        let jwt_audience = env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-backend-client".to_string());
+        let jwt_secret =
+            env::var("JWT_SECRET").map_err(|_| anyhow::anyhow!("missing JWT_SECRET"))?;
+        anyhow::ensure!(
+            jwt_secret.len() >= 32,
+            "JWT_SECRET must be at least 32 bytes"
+        );
+        let jwt_issuer =
+            env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-backend-bootstrap".to_string());
+        let jwt_audience =
+            env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-backend-client".to_string());
         let cors_origins = env::var("CORS_ORIGINS")
             .ok()
             .or_else(|| conf.get("http", "cors_origins"))

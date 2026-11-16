@@ -304,8 +304,10 @@ pub(crate) async fn refresh_handler(
     let result = service::auth::refresh(&state.db, &state.config, &payload.refresh_token)
         .await
         .map_err(|error| match error {
-            service::auth::RefreshError::InvalidToken | service::auth::RefreshError::ReuseDetected =>
-                ApiError::unauthorized("invalid or expired refresh token"),
+            service::auth::RefreshError::InvalidToken
+            | service::auth::RefreshError::ReuseDetected => {
+                ApiError::unauthorized("invalid or expired refresh token")
+            }
             service::auth::RefreshError::Internal(error) => ApiError::internal(error),
         })?;
     Ok(Json(ApiResponse::ok(LoginResponse {
