@@ -1,13 +1,13 @@
 .DEFAULT_GOAL := help
-.PHONY: help services services-down migrate run dev check fmt test test-integration verify
+.PHONY: help up down migrate run dev check fmt test test-integration verify
 
 help:
-	@printf '%s\n' 'make services          Start PostgreSQL and Redis containers' 'make services-down     Stop containers' 'make migrate           Apply database migrations and RBAC seed' 'make run               Start the API' 'make dev               Start services and API' 'make check             Type-check the project' 'make fmt               Format Rust files' 'make test              Run unit tests' 'make test-integration  Run tests using TEST_DATABASE_URL and TEST_REDIS_URL' 'make verify            Format, Clippy, and unit tests'
+	@printf '%s\n' 'make up          Start PostgreSQL and Redis containers' 'make down     Stop containers' 'make migrate           Apply database migrations and RBAC seed' 'make run               Start the API' 'make dev               Start up and API' 'make check             Type-check the project' 'make fmt               Format Rust files' 'make test              Run unit tests' 'make test-integration  Run tests using TEST_DATABASE_URL and TEST_REDIS_URL' 'make verify            Format, Clippy, and unit tests'
 
-services:
+up:
 	docker compose up -d --wait
 
-services-down:
+down:
 	docker compose down
 
 migrate:
@@ -16,7 +16,7 @@ migrate:
 run:
 	cargo run
 
-dev: services migrate
+dev: up migrate
 	cargo run
 
 check:
