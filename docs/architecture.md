@@ -19,7 +19,7 @@ src/
 
 A typical request flows from a `routes` declaration to a `controller`. The controller parses HTTP input and enforces route access, calls a `service` for a workflow or a `repository` for simple CRUD, then returns a JSON response. Services use repositories for application table persistence. The scheduler uses `repository::scheduler` for its task and execution records. SeaORM models describe the database shape; they are not UI models or views.
 
-For example, `POST /user/login` is declared in `routes/user.rs`, translated from HTTP in `controller/user.rs`, coordinated in `service/auth.rs`, and persisted through `repository/user.rs`, `repository/session.rs`, and `repository/login_log.rs`. Redis throttling lives in `service/redis.rs`.
+For example, `POST /api/v1/auth/signin` is declared in `routes/user.rs`, translated from HTTP in `controller/user.rs`, coordinated in `service/auth.rs`, and persisted through `repository/user.rs`, `repository/session.rs`, and `repository/login_log.rs`. Redis throttling lives in `service/redis.rs`.
 
 To add a feature, add its SeaORM entity and migration if it needs storage, a repository for data access, a service for workflows, a controller for HTTP input/output, and a route declaration. For a simple read or CRUD operation, the controller may call the repository directly. Shared authentication and response types live in `http/`.
 

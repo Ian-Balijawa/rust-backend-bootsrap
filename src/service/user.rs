@@ -3,33 +3,62 @@
 use crate::model::user;
 use crate::repository;
 use crate::scheduler::task_scheduler::TaskScheduler;
-use bcrypt::{DEFAULT_COST, hash, verify};
-use chrono::{DateTime, Utc};
-use sea_orm::DatabaseConnection;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use sea_orm::{DatabaseConnection, DbErr, TransactionTrait};
 use serde_json::json;
+
+#[derive(Debug, thiserror::Error)]
+pub enum RegisterError {
+    #[error("username is required")]
+    InvalidUsername,
+    #[error("username already exists")]
+    DuplicateUsername,
+    #[error("email already exists")]
+    DuplicateEmail,
+    #[error("too many signup attempts; try again later")]
+    Limited,
+    #[error(transparent)]
+    Database(#[from] DbErr),
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
+}
 
 // Register a new user
 pub async fn register_user(
     db: &DatabaseConnection,
+    redis: &redis::aio::ConnectionManager,
     scheduler: &TaskScheduler,
     username: &str,
     password: &str,
     email: &str,
-) -> anyhow::Result<user::Model> {
+    ip: &str,
+) -> Result<user::Model, RegisterError> {
+    if username.trim().is_empty() {
+        return Err(RegisterError::InvalidUsername);
+    }
+    if crate::service::redis::request_limited(redis, "signup", email, ip, 5)
+        .await
+        .map_err(anyhow::Error::from)?
+    {
+        return Err(RegisterError::Limited);
+    }
     // Check if the username already exists
     let exists = repository::user::find_by_username(db, username)
         .await?
         .is_some();
     if exists {
-        anyhow::bail!("Username already exists");
+        return Err(RegisterError::DuplicateUsername);
     }
-    let email_exists = repository::user::find_by_email(db, email).await?.is_some();
+    let email = email.trim().to_lowercase();
+    let email_exists = repository::user::find_by_email(db, &email).await?.is_some();
     if email_exists {
-        anyhow::bail!("Email already exists");
+        return Err(RegisterError::DuplicateEmail);
     }
-    let password_hash = hash(password, DEFAULT_COST)?;
-    let user = repository::user::insert(db, username, password_hash, Some(email)).await?;
-    crate::service::rbac::assign_registration_role(db, user.id).await?;
+    let password_hash = hash_password(password).await?;
+    let txn = db.begin().await?;
+    let user = repository::user::insert(&txn, username, password_hash, Some(&email)).await?;
+    crate::service::rbac::assign_registration_role(&txn, user.id).await?;
+    txn.commit().await?;
     // Send mail asynchronously through the scheduler
     let mail_data = json!({
         "to": email,
@@ -51,13 +80,55 @@ pub async fn record_login(
     db: &DatabaseConnection,
     user: user::Model,
     ip: &str,
-) -> anyhow::Result<(user::Model, String, DateTime<Utc>)> {
+) -> anyhow::Result<user::Model> {
     let user = repository::user::record_login(db, user, ip).await?;
-    let (token, expires_at) = crate::service::auth::create_session(db, user.id).await?;
-    Ok((user, token, expires_at))
+    Ok(user)
 }
 
 // Verify password
-pub fn verify_password(hash: &str, password: &str) -> bool {
-    verify(password, hash).unwrap_or(false)
+pub async fn hash_password(password: &str) -> anyhow::Result<String> {
+    let password = password.to_owned();
+    tokio::task::spawn_blocking(move || {
+        Argon2::default()
+            .hash_password(password.as_bytes())
+            .map(|hash| hash.to_string())
+            .map_err(|error| anyhow::anyhow!(error.to_string()))
+    })
+    .await?
+}
+
+pub async fn verify_password(hash: &str, password: &str) -> bool {
+    let hash = hash.to_owned();
+    let password = password.to_owned();
+    tokio::task::spawn_blocking(move || {
+        if hash.starts_with("$argon2id$") {
+            PasswordHash::new(&hash).ok().is_some_and(|parsed| {
+                Argon2::default()
+                    .verify_password(password.as_bytes(), &parsed)
+                    .is_ok()
+            })
+        } else if hash.starts_with("$2") {
+            // Existing bcrypt accounts remain usable while their hashes are upgraded on login.
+            bcrypt::verify(password, &hash).unwrap_or(false)
+        } else {
+            false
+        }
+    })
+    .await
+    .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn passwords_use_argon2id_and_random_salts() {
+        let first = hash_password("correct horse battery staple").await.unwrap();
+        let second = hash_password("correct horse battery staple").await.unwrap();
+        assert!(first.starts_with("$argon2id$"));
+        assert_ne!(first, second);
+        assert!(verify_password(&first, "correct horse battery staple").await);
+        assert!(!verify_password(&first, "incorrect").await);
+    }
 }

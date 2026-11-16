@@ -12,6 +12,8 @@ pub struct Model {
     pub ip: Option<String>,
     pub user_agent: Option<String>,
     pub revoked_at: Option<DateTimeUtc>,
+    pub family_id: Option<String>,
+    pub used_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -10,7 +10,7 @@ pub fn router() -> Router<AppState> {
         .route(
             "/{id}",
             get(task::get_task_handler)
-                .put(task::update_task_handler)
+                .patch(task::update_task_handler)
                 .delete(task::delete_task_handler),
         )
 }

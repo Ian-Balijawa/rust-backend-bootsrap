@@ -22,7 +22,13 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             .filter(|token| !token.is_empty())
             .ok_or_else(|| ApiError::unauthorized("invalid authorization header"))?;
 
-        crate::service::auth::authenticate(&state.db, token)
+        if crate::service::redis::access_revoked(&state.redis, token)
+            .await
+            .map_err(ApiError::internal)?
+        {
+            return Err(ApiError::unauthorized("invalid or expired access token"));
+        }
+        crate::service::auth::authenticate_access(&state.db, &state.config, token)
             .await
             .map_err(ApiError::internal)?
             .ok_or_else(|| ApiError::unauthorized("invalid or expired session"))

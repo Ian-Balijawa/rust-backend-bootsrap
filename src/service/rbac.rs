@@ -1,7 +1,7 @@
 use crate::model::{file, task, user};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set,
     rbac::{
         Action, RbacEngine, RbacUserId, Table,
         entity::{
@@ -79,23 +79,15 @@ pub async fn permissions_for_user(
         .collect())
 }
 
-pub async fn assign_registration_role(db: &DatabaseConnection, user_id: i32) -> Result<(), DbErr> {
-    let admin_role = find_role(db, ADMIN_ROLE).await?;
-    let admin_exists = user_role::Entity::find()
-        .filter(user_role::Column::RoleId.eq(admin_role.id))
-        .count(db)
-        .await?
-        > 0;
-    assign_role(
-        db,
-        user_id,
-        if admin_exists { USER_ROLE } else { ADMIN_ROLE },
-    )
-    .await
+pub async fn assign_registration_role<C: ConnectionTrait>(
+    db: &C,
+    user_id: i32,
+) -> Result<(), DbErr> {
+    assign_role(db, user_id, USER_ROLE).await
 }
 
-pub async fn assign_role(
-    db: &DatabaseConnection,
+pub async fn assign_role<C: ConnectionTrait>(
+    db: &C,
     user_id: i32,
     role_name: &str,
 ) -> Result<(), DbErr> {
@@ -244,19 +236,19 @@ async fn assign_unassigned_users(db: &DatabaseConnection) -> Result<(), DbErr> {
         .order_by_asc(user::Column::Id)
         .all(db)
         .await?;
-    for (index, user) in users.into_iter().enumerate() {
+    for user in users {
         if user_role::Entity::find_by_id(RbacUserId(i64::from(user.id)))
             .one(db)
             .await?
             .is_none()
         {
-            assign_role(db, user.id, if index == 0 { ADMIN_ROLE } else { USER_ROLE }).await?;
+            assign_role(db, user.id, USER_ROLE).await?;
         }
     }
     Ok(())
 }
 
-async fn find_role(db: &DatabaseConnection, role_name: &str) -> Result<role::Model, DbErr> {
+async fn find_role<C: ConnectionTrait>(db: &C, role_name: &str) -> Result<role::Model, DbErr> {
     role::Entity::find()
         .filter(role::Column::Role.eq(role_name))
         .one(db)

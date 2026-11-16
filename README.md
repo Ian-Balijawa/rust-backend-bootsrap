@@ -8,12 +8,15 @@ Requires Rust and Docker Compose. `make services` starts PostgreSQL and Redis on
 
 ```sh
 make services
+cp .env.example .env
 make dev
 ```
 
 `make dev` starts the services if needed, applies migrations and RBAC seeds, then starts the API on `0.0.0.0:8000`. `make migrate` runs migrations without starting the API. The API refuses to start while migrations are pending. `make verify` runs formatting, Clippy, and unit tests. `make services-down` stops the containers without deleting their volumes.
 
-The sample `config.ini` contains local development defaults. In deployment set `DATABASE_URL`, `REDIS_URL`, `UPLOAD_DIR`, `MAX_UPLOAD_BYTES`, `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and optionally `RUST_LOG` through the environment. `MAX_UPLOAD_BYTES` defaults to 10 MiB and accepts 1 byte through 1 GiB. Configure a persistent, private upload directory. Do not expose PostgreSQL or Redis publicly.
+The API hardening migration invalidates older plaintext sessions, so users must sign in again after it is applied. It also adds a case-insensitive unique email index; resolve any existing emails that differ only in letter case before migrating.
+
+The sample `config.ini` contains local development defaults. The `.env.example` file includes a local placeholder for `JWT_SECRET`; replace it with a random secret of at least 32 bytes before deployment. Set explicit `CORS_ORIGINS` values. `MAX_UPLOAD_BYTES` defaults to 10 MiB and accepts 1 byte through 1 GiB. Configure a persistent, private upload directory. Do not expose PostgreSQL or Redis publicly.
 
 Create an admin account explicitly:
 
@@ -21,29 +24,29 @@ Create an admin account explicitly:
 cargo run -- create-admin --username admin
 ```
 
-If `--password` is omitted, the generated password is printed once. The first registered user also receives the admin role; subsequent users receive the user role.
+If `--password` is omitted, the generated password is printed once. Public signups always receive the user role; use the CLI to create administrators.
 
 ## API
 
 - `GET /live`: process liveness.
 - `GET /health`: checks PostgreSQL and Redis and reports scheduler state.
-- `POST /user/register`, `POST /user/login`, `POST /user/logout`, `GET /user/me`: user access. Login accepts a username and password, returns a 24-hour bearer token, and limits failed attempts per username and peer IP with Redis.
-- `GET/POST /tasks`, `GET/PUT/DELETE /tasks/{id}`: task data.
-- `GET/POST /scheduler/tasks`, `GET/DELETE /scheduler/tasks/{id}`, `POST /scheduler/tasks/{id}/run`: scheduler management.
-- `GET/POST/PUT/DELETE /system-config/{key}`: system configuration.
-- `POST /files/`, `GET /files/{id}`, `GET /files/{id}/download`, `DELETE /files/{id}`: file upload, metadata, download, and deletion.
+- `GET /ready`: readiness check for PostgreSQL and Redis.
+- `POST /api/v1/auth/signup`, `POST /api/v1/auth/signin`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/signout`, `GET /api/v1/auth/me`, `POST /api/v1/auth/change-password`, `POST /api/v1/auth/forgot-password`, `POST /api/v1/auth/reset-password`: user access. Signin accepts an email and password and returns a 15-minute JWT access token plus a 14-day rotating refresh token. Passwords use Argon2id; existing bcrypt hashes are upgraded at signin. Reset emails use single-use 15-minute tokens.
+- `GET/POST /api/v1/tasks`, `GET/PATCH/DELETE /api/v1/tasks/{id}`: owner-scoped task data. Lists accept `page` and `per_page` (up to 100). Deletion is soft.
+- `/api/v1/scheduler`, `/api/v1/system-config`: scheduler and configuration management.
+- `POST /api/v1/files/`, `GET /api/v1/files/{id}`, `GET /api/v1/files/{id}/download`, `DELETE /api/v1/files/{id}`: file upload, metadata, download, and soft deletion.
 
-Protected routes require `Authorization: Bearer <token>`. File routes require `file:read` or `file:write`; owners and administrators can access a file. Upload a raw request body with an `X-File-Name` header and a `Content-Type` header:
+Protected routes require `Authorization: Bearer <token>`. File routes require `file:read` or `file:write`; only owners can access a file. Upload a raw request body with an `X-File-Name` header and a `Content-Type` header:
 
 ```sh
-curl -X POST http://localhost:8000/files/ \
+curl -X POST http://localhost:8000/api/v1/files/ \
   -H "Authorization: Bearer $TOKEN" \
   -H 'X-File-Name: report.pdf' \
   -H 'Content-Type: application/pdf' \
   --data-binary @report.pdf
 ```
 
-The response contains a UUID file ID. Download with `curl -OJ -H "Authorization: Bearer $TOKEN" http://localhost:8000/files/ID/download`. Uploads stream to a temporary file and enforce the configured size limit while streaming. The PostgreSQL `files` table stores metadata; file bytes live under `UPLOAD_DIR` with UUID names. Back up both the database and upload directory together. See [API guide](docs/api.md) and [scheduler guide](docs/scheduler_usage.md).
+The response contains a UUIDv7 file ID. Download with `curl -OJ -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/files/ID/download`. Uploads stream to a temporary file and enforce the configured size limit while streaming. Soft deletion hides file metadata but retains the bytes under `UPLOAD_DIR` for later cleanup or recovery. Back up both the database and upload directory together. See [API guide](docs/api.md) and [scheduler guide](docs/scheduler_usage.md).
 
 ## Checks and deployment
 

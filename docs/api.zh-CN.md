@@ -17,31 +17,35 @@ Content-Type: application/json
 
 ## 用户与认证
 
-### `POST /user/register`（公开）
+### `POST /api/v1/auth/signup`（公开）
 
 ```json
 {"username":"admin","password":"password123","email":"admin@example.com"}
 ```
 
-密码至少 8 位。首个用户获得 `admin`，后续用户获得 `user`。用户保存邮箱、启用状态、创建/更新时间及最后登录时间和 IP。
+密码至少 8 位。公开注册的用户始终获得 `user` 角色；管理员通过 CLI 创建。邮箱会去除首尾空格并转为小写。
 
-### `POST /user/login`（公开）
+### `POST /api/v1/auth/signin`（公开）
 
 ```json
-{"username":"admin","password":"password123"}
+{"email":"admin@example.com","password":"password123"}
 ```
 
-返回 `token`、`token_type`、`expires_at`、`user_id`、`last_login_at`。Token 有效期 24 小时。登录 IP 来自 TCP 对端地址，不信任客户端代理头。
+返回 `token`、`refresh_token`、到期时间及用户信息。JWT 访问 token 有效期 15 分钟，刷新 token 有效期 14 天。登录 IP 来自 TCP 对端地址，不信任客户端代理头。
 
-### `GET /user/me`（登录）
+`POST /api/v1/auth/refresh` 使用 `refresh_token` 换取新的 token 对；刷新 token 每次轮换，重复使用旧 token 会撤销整个 token 家族。
+
+### `GET /api/v1/auth/me`（登录）
 
 返回当前用户的 `id`、`username`、`email`、`is_active`、审计时间、`last_login_ip` 和权限列表。
 
-### `POST /user/logout`（登录）
+### `POST /api/v1/auth/signout`（登录）
 
-删除当前会话，原 token 立即失效。
+请求体提供 `refresh_token`。当前访问 token 立即失效，刷新 token 被撤销。
 
-### `PUT /user/{id}/role`（`user:manage`）
+`POST /api/v1/auth/change-password` 使用 `current_password` 和 `new_password` 修改密码，并撤销所有会话。`POST /api/v1/auth/forgot-password` 使用 `email` 请求重置邮件；`POST /api/v1/auth/reset-password` 使用 `token` 和 `new_password` 完成重置。重置 token 15 分钟内有效且只能使用一次。
+
+### `PUT /api/v1/auth/{id}/role`（`user:manage`）
 
 ```json
 {"role":"admin"}
@@ -51,13 +55,13 @@ Content-Type: application/json
 
 ## 普通任务
 
-普通用户只能操作自己的任务；具有 `user:manage` 的用户可跨用户访问。
+每位用户只能操作自己的任务；访问其他用户的任务返回 404。
 
-- `GET /tasks`：`task:read`，管理员可用 `?user_id=1` 筛选
-- `GET /tasks/{id}`：`task:read`
-- `POST /tasks`：`task:write`
-- `PUT /tasks/{id}`：`task:write`
-- `DELETE /tasks/{id}`：`task:write`
+- `GET /api/v1/tasks`：`task:read`，支持 `page` 和 `per_page`（最多 100）
+- `GET /api/v1/tasks/{id}`：`task:read`
+- `POST /api/v1/tasks`：`task:write`
+- `PATCH /api/v1/tasks/{id}`：`task:write`
+- `DELETE /api/v1/tasks/{id}`：`task:write`
 
 创建：
 
@@ -65,16 +69,16 @@ Content-Type: application/json
 {"action":"send_report","schedule_time":"2026-07-12T10:00:00Z"}
 ```
 
-管理员可额外传 `user_id`。更新时 `action`、`schedule_time` 均为可选字段。
+创建时用户 ID 来自 token。更新时 `action`、`schedule_time` 均为可选字段。删除为软删除。
 
 ## 调度器
 
-- `GET /scheduler/tasks`：`scheduler:read`
-- `GET /scheduler/tasks/{id}`：`scheduler:read`
-- `GET /scheduler/tasks/{id}/executions`：`scheduler:read`
-- `POST /scheduler/tasks`：`scheduler:write`
-- `POST /scheduler/tasks/{id}/run`：`scheduler:write`
-- `DELETE /scheduler/tasks/{id}`：`scheduler:write`
+- `GET /api/v1/scheduler/tasks`：`scheduler:read`
+- `GET /api/v1/scheduler/tasks/{id}`：`scheduler:read`
+- `GET /api/v1/scheduler/tasks/{id}/executions`：`scheduler:read`
+- `POST /api/v1/scheduler/tasks`：`scheduler:write`
+- `POST /api/v1/scheduler/tasks/{id}/run`：`scheduler:write`
+- `DELETE /api/v1/scheduler/tasks/{id}`：`scheduler:write`
 
 创建循环任务：
 
@@ -94,7 +98,7 @@ Content-Type: application/json
 
 创建时会校验 `executor_type` 是否已经注册，未注册返回 HTTP `400`。任务定义写入 `scheduler_tasks`，每次执行写入 `task_executions`，其中保存 `running`、`completed`、`failed`、`cancelled` 状态、结束时间和错误信息。
 
-`GET /scheduler/tasks/{id}/executions` 按时间倒序返回执行记录：
+`GET /api/v1/scheduler/tasks/{id}/executions` 按时间倒序返回执行记录：
 
 ```json
 {"success":true,"message":"ok","data":[{"id":"...","task_id":"...","attempt":1,"status":"completed","started_at":"2026-09-06T08:00:00Z","finished_at":"2026-09-06T08:00:02Z","error":null}]}
@@ -102,11 +106,11 @@ Content-Type: application/json
 
 ## 系统配置
 
-- `GET /system-config`：`system_config:read`
-- `GET /system-config/{key}`：`system_config:read`
-- `POST /system-config/{key}`：`system_config:write`，创建
-- `PUT /system-config/{key}`：`system_config:write`，更新
-- `DELETE /system-config/{key}`：`system_config:write`
+- `GET /api/v1/system-config`：`system_config:read`
+- `GET /api/v1/system-config/{key}`：`system_config:read`
+- `POST /api/v1/system-config/{key}`：`system_config:write`，创建
+- `PUT /api/v1/system-config/{key}`：`system_config:write`，更新
+- `DELETE /api/v1/system-config/{key}`：`system_config:write`
 
 创建或更新请求：
 
@@ -125,11 +129,11 @@ Content-Type: application/json
 
 ## 文件服务
 
-文件接口需要 Bearer token。用户仅能操作自己的文件，管理员可操作所有文件。
+文件接口需要 Bearer token。用户仅能操作自己的文件；访问其他用户的文件返回 404。
 
-- `POST /files/`（`file:write`）：使用原始请求体上传，提供 `X-File-Name`（最多 255 字节，不能包含路径分隔符），可提供 `Content-Type`。成功返回 201 和文件元数据，超过 `MAX_UPLOAD_BYTES` 返回 413。
-- `GET /files/{id}`（`file:read`）：获取元数据。
-- `GET /files/{id}/download`（`file:read`）：流式下载文件。
-- `DELETE /files/{id}`（`file:write`）：删除文件和元数据。
+- `POST /api/v1/files/`（`file:write`）：使用原始请求体上传，提供 `X-File-Name`（最多 255 字节，不能包含路径分隔符），可提供 `Content-Type`。成功返回 201 和文件元数据，超过 `MAX_UPLOAD_BYTES` 返回 413。
+- `GET /api/v1/files/{id}`（`file:read`）：获取元数据。
+- `GET /api/v1/files/{id}/download`（`file:read`）：流式下载文件。
+- `DELETE /api/v1/files/{id}`（`file:write`）：软删除元数据；文件内容保留在私有存储中。
 
 `GET /live` 检查进程；`GET /health` 检查 PostgreSQL 和 Redis，依赖不可用时返回 503。相同用户名和 TCP 对端 IP 在 15 分钟内登录失败五次后，登录接口返回 429。

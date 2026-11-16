@@ -30,6 +30,18 @@ pub async fn open(upload_dir: &Path, id: &str) -> std::io::Result<fs::File> {
     fs::File::open(path).await
 }
 
+pub async fn find_for_owner(
+    db: &DatabaseConnection,
+    upload_dir: &Path,
+    owner_id: i32,
+    id: &str,
+) -> Result<Option<file::Model>, sea_orm::DbErr> {
+    if path_for(upload_dir, id).is_none() {
+        return Ok(None);
+    }
+    repository::file::find_for_owner(db, id, owner_id).await
+}
+
 pub async fn save(
     db: &DatabaseConnection,
     upload_dir: &Path,
@@ -40,7 +52,7 @@ pub async fn save(
     body: Body,
 ) -> Result<file::Model, UploadError> {
     fs::create_dir_all(upload_dir).await?;
-    let id = Uuid::new_v4().to_string();
+    let id = Uuid::now_v7().to_string();
     let path = upload_dir.join(&id);
     let temporary_path = upload_dir.join(format!("{id}.part"));
     let result = async {
@@ -83,25 +95,8 @@ pub async fn save(
     result
 }
 
-pub async fn delete(db: &DatabaseConnection, upload_dir: &Path, id: &str) -> anyhow::Result<()> {
-    let Some(path) = path_for(upload_dir, id) else {
-        anyhow::bail!("invalid file id");
-    };
-    let tombstone = path.with_extension("deleting");
-    let moved = match fs::rename(&path, &tombstone).await {
-        Ok(()) => true,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-        Err(error) => return Err(error.into()),
-    };
-    if let Err(error) = repository::file::delete(db, id).await {
-        if moved {
-            fs::rename(&tombstone, &path).await?;
-        }
-        return Err(error.into());
-    }
-    if moved && let Err(error) = fs::remove_file(&tombstone).await {
-        tracing::warn!(file_id = id, %error, "failed to remove deleted file bytes");
-    }
+pub async fn delete(db: &DatabaseConnection, id: &str) -> anyhow::Result<()> {
+    repository::file::delete(db, id).await?;
     Ok(())
 }
 

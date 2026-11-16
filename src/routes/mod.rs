@@ -16,10 +16,10 @@ pub async fn fallback() -> (StatusCode, &'static str) {
 pub fn create_router() -> Router<AppState> {
     Router::new()
         .merge(health::router())
-        .nest("/user", user::router())
-        .nest("/tasks", task::router())
-        .nest("/files", file::router())
-        .nest("/scheduler", scheduler::router())
-        .nest("/system-config", system_config::router())
+        .nest("/api/v1/auth", user::router())
+        .nest("/api/v1/tasks", task::router())
+        .nest("/api/v1/files", file::router())
+        .nest("/api/v1/scheduler", scheduler::router())
+        .nest("/api/v1/system-config", system_config::router())
         .fallback(fallback)
 }

@@ -138,12 +138,12 @@ scheduler.execute_task_now(&task_id).await;
 
 Scheduler endpoints require a Bearer token and the listed permission:
 
-- `GET /scheduler/tasks`: `scheduler:read`
-- `GET /scheduler/tasks/{id}`: `scheduler:read`
-- `GET /scheduler/tasks/{id}/executions`: `scheduler:read`
-- `POST /scheduler/tasks`: `scheduler:write`
-- `POST /scheduler/tasks/{id}/run`: `scheduler:write`
-- `DELETE /scheduler/tasks/{id}`: `scheduler:write`
+- `GET /api/v1/scheduler/tasks`: `scheduler:read`
+- `GET /api/v1/scheduler/tasks/{id}`: `scheduler:read`
+- `GET /api/v1/scheduler/tasks/{id}/executions`: `scheduler:read`
+- `POST /api/v1/scheduler/tasks`: `scheduler:write`
+- `POST /api/v1/scheduler/tasks/{id}/run`: `scheduler:write`
+- `DELETE /api/v1/scheduler/tasks/{id}`: `scheduler:write`
 
 `task_type` accepts `one_time`, `recurring`, `scheduled`, or `persistent`. Recurring tasks require a positive `interval_seconds`; scheduled tasks require `next_run` as a UTC RFC 3339 timestamp. See the [API guide](api.md) for full request examples.
 

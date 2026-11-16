@@ -2,7 +2,7 @@ use sea_orm::entity::prelude::*;
 
 crate::define_permissions!(file => [read, write]);
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "files")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -12,6 +12,8 @@ pub struct Model {
     pub content_type: String,
     pub size_bytes: i64,
     pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
+    pub deleted_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

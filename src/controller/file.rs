@@ -4,7 +4,7 @@ use crate::{
         auth::{FileRead, FileWrite, Required},
         response::{ApiError, ApiResponse},
     },
-    repository, service,
+    service,
 };
 use axum::{
     Json,
@@ -13,8 +13,33 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use serde::Serialize;
 use tokio_util::io::ReaderStream;
+
+#[derive(Serialize)]
+pub(crate) struct FileResponse {
+    id: String,
+    filename: String,
+    content_type: String,
+    size_bytes: i64,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<crate::model::file::Model> for FileResponse {
+    fn from(file: crate::model::file::Model) -> Self {
+        Self {
+            id: file.id,
+            filename: file.filename,
+            content_type: file.content_type,
+            size_bytes: file.size_bytes,
+            created_at: file.created_at,
+            updated_at: file.updated_at,
+        }
+    }
+}
 
 fn upload_name(headers: &HeaderMap) -> Result<&str, ApiError> {
     let name = headers
@@ -78,7 +103,10 @@ pub(crate) async fn upload(
         service::file::UploadError::Stream(_) => ApiError::bad_request("invalid upload stream"),
         _ => ApiError::internal(error),
     })?;
-    Ok((StatusCode::CREATED, Json(ApiResponse::ok(model))))
+    Ok((
+        StatusCode::CREATED,
+        Json(ApiResponse::ok(FileResponse::from(model))),
+    ))
 }
 
 pub(crate) async fn metadata(
@@ -87,7 +115,7 @@ pub(crate) async fn metadata(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     let model = authorized_file(&state, &user, &id).await?;
-    Ok(Json(ApiResponse::ok(model)))
+    Ok(Json(ApiResponse::ok(FileResponse::from(model))))
 }
 
 pub(crate) async fn download(
@@ -144,7 +172,7 @@ pub(crate) async fn delete(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     authorized_file(&state, &user, &id).await?;
-    service::file::delete(&state.db, &state.config.upload_dir, &id)
+    service::file::delete(&state.db, &id)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(ApiResponse::<()>::message("file deleted")))
@@ -155,15 +183,9 @@ async fn authorized_file<P>(
     user: &Required<P>,
     id: &str,
 ) -> Result<crate::model::file::Model, ApiError> {
-    if service::file::path_for(&state.config.upload_dir, id).is_none() {
-        return Err(ApiError::not_found("file not found"));
-    }
-    let model = repository::file::find(&state.db, id)
+    let model = service::file::find_for_owner(&state.db, &state.config.upload_dir, user.id, id)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("file not found"))?;
-    if model.owner_id != user.id && !user.has_permission("user:manage") {
-        return Err(ApiError::forbidden("cannot access another user's file"));
-    }
     Ok(model)
 }

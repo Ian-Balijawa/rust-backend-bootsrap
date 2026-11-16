@@ -4,23 +4,33 @@ use crate::{
         auth::{Required, TaskRead, TaskWrite},
         response::{ApiError, ApiResponse},
     },
-    repository,
+    service,
 };
 use axum::{
     Json,
     extract::{Path, Query, State},
+    http::StatusCode,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub(crate) struct TaskQuery {
-    user_id: Option<i32>,
+    #[serde(default = "default_page")]
+    page: u64,
+    #[serde(default = "default_per_page")]
+    per_page: u64,
+}
+
+fn default_page() -> u64 {
+    1
+}
+fn default_per_page() -> u64 {
+    20
 }
 
 #[derive(Deserialize)]
 pub(crate) struct CreateTaskRequest {
-    user_id: Option<i32>,
     action: String,
     schedule_time: DateTime<Utc>,
 }
@@ -37,6 +47,8 @@ pub(crate) struct TaskResponse {
     user_id: i32,
     action: String,
     schedule_time: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 impl From<crate::model::task::Model> for TaskResponse {
@@ -46,7 +58,31 @@ impl From<crate::model::task::Model> for TaskResponse {
             user_id: task.user_id,
             action: task.action,
             schedule_time: task.schedule_time,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
         }
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct PageMeta {
+    page: u64,
+    per_page: u64,
+    total: u64,
+    total_pages: u64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct TaskPage {
+    items: Vec<TaskResponse>,
+    meta: PageMeta,
+}
+
+fn task_error(error: service::task::TaskError) -> ApiError {
+    match error {
+        service::task::TaskError::NotFound => ApiError::not_found("task not found"),
+        service::task::TaskError::InvalidAction => ApiError::bad_request(error.to_string()),
+        service::task::TaskError::Database(error) => ApiError::internal(error),
     }
 }
 
@@ -54,21 +90,24 @@ pub(crate) async fn list_tasks_handler(
     State(state): State<AppState>,
     user: Required<TaskRead>,
     Query(query): Query<TaskQuery>,
-) -> Result<Json<ApiResponse<Vec<TaskResponse>>>, ApiError> {
-    let requested_user = query.user_id.unwrap_or(user.id);
-    if requested_user != user.id && !user.has_permission("user:manage") {
-        return Err(ApiError::forbidden("cannot read another user's tasks"));
+) -> Result<Json<ApiResponse<TaskPage>>, ApiError> {
+    if query.page == 0 || query.per_page == 0 || query.per_page > 100 {
+        return Err(ApiError::bad_request(
+            "page must be positive and per_page must be 1..=100",
+        ));
     }
-    let tasks = if query.user_id.is_some() || !user.has_permission("user:manage") {
-        repository::task::get_tasks_by_user(&state.db, requested_user).await
-    } else {
-        repository::task::get_all_tasks(&state.db).await
-    }
-    .map_err(ApiError::internal)?;
-
-    Ok(Json(ApiResponse::ok(
-        tasks.into_iter().map(TaskResponse::from).collect(),
-    )))
+    let (tasks, total) = service::task::list(&state.db, user.id, query.page, query.per_page)
+        .await
+        .map_err(task_error)?;
+    Ok(Json(ApiResponse::ok(TaskPage {
+        items: tasks.into_iter().map(TaskResponse::from).collect(),
+        meta: PageMeta {
+            page: query.page,
+            per_page: query.per_page,
+            total,
+            total_pages: total.div_ceil(query.per_page),
+        },
+    })))
 }
 
 pub(crate) async fn get_task_handler(
@@ -76,36 +115,21 @@ pub(crate) async fn get_task_handler(
     user: Required<TaskRead>,
     Path(id): Path<i32>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, ApiError> {
-    let task = repository::task::get_task_by_id(&state.db, id)
+    let task = service::task::get(&state.db, user.id, id)
         .await
-        .map_err(ApiError::internal)?
-        .ok_or_else(|| ApiError::not_found("task not found"))?;
-    ensure_task_access(&user, task.user_id)?;
-
-    Ok(Json(ApiResponse::ok(TaskResponse::from(task))))
+        .map_err(task_error)?;
+    Ok(Json(ApiResponse::ok(task.into())))
 }
 
 pub(crate) async fn create_task_handler(
     State(state): State<AppState>,
     user: Required<TaskWrite>,
     Json(payload): Json<CreateTaskRequest>,
-) -> Result<Json<ApiResponse<TaskResponse>>, ApiError> {
-    if payload.action.trim().is_empty() {
-        return Err(ApiError::bad_request("action is required"));
-    }
-
-    let user_id = payload.user_id.unwrap_or(user.id);
-    ensure_task_access(&user, user_id)?;
-    let task = repository::task::add_task(
-        &state.db,
-        user_id,
-        payload.action.trim(),
-        payload.schedule_time,
-    )
-    .await
-    .map_err(ApiError::internal)?;
-
-    Ok(Json(ApiResponse::ok(TaskResponse::from(task))))
+) -> Result<(StatusCode, Json<ApiResponse<TaskResponse>>), ApiError> {
+    let task = service::task::create(&state.db, user.id, &payload.action, payload.schedule_time)
+        .await
+        .map_err(task_error)?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(task.into()))))
 }
 
 pub(crate) async fn update_task_handler(
@@ -114,52 +138,25 @@ pub(crate) async fn update_task_handler(
     Path(id): Path<i32>,
     Json(payload): Json<UpdateTaskRequest>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, ApiError> {
-    if matches!(payload.action.as_deref(), Some(action) if action.trim().is_empty()) {
-        return Err(ApiError::bad_request("action cannot be empty"));
-    }
-    let existing = repository::task::get_task_by_id(&state.db, id)
-        .await
-        .map_err(ApiError::internal)?
-        .ok_or_else(|| ApiError::not_found("task not found"))?;
-    ensure_task_access(&user, existing.user_id)?;
-
-    let task = repository::task::update_task(
+    let task = service::task::update(
         &state.db,
+        user.id,
         id,
-        payload.action.map(|action| action.trim().to_string()),
+        payload.action,
         payload.schedule_time,
     )
     .await
-    .map_err(ApiError::internal)?
-    .ok_or_else(|| ApiError::not_found("task not found"))?;
-
-    Ok(Json(ApiResponse::ok(TaskResponse::from(task))))
+    .map_err(task_error)?;
+    Ok(Json(ApiResponse::ok(task.into())))
 }
 
 pub(crate) async fn delete_task_handler(
     State(state): State<AppState>,
     user: Required<TaskWrite>,
     Path(id): Path<i32>,
-) -> Result<Json<ApiResponse<()>>, ApiError> {
-    let existing = repository::task::get_task_by_id(&state.db, id)
+) -> Result<StatusCode, ApiError> {
+    service::task::delete(&state.db, user.id, id)
         .await
-        .map_err(ApiError::internal)?
-        .ok_or_else(|| ApiError::not_found("task not found"))?;
-    ensure_task_access(&user, existing.user_id)?;
-    if repository::task::delete_task(&state.db, id)
-        .await
-        .map_err(ApiError::internal)?
-    {
-        Ok(Json(ApiResponse::message("task deleted")))
-    } else {
-        Err(ApiError::not_found("task not found"))
-    }
-}
-
-fn ensure_task_access<P>(user: &Required<P>, owner_id: i32) -> Result<(), ApiError> {
-    if user.id == owner_id || user.has_permission("user:manage") {
-        Ok(())
-    } else {
-        Err(ApiError::forbidden("cannot access another user's task"))
-    }
+        .map_err(task_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }

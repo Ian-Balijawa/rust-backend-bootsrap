@@ -6,45 +6,98 @@ use sha2::{Digest, Sha256};
 const FAILURE_LIMIT: i64 = 5;
 const WINDOW_SECONDS: i64 = 900;
 
-fn failure_key(username: &str, ip: &str) -> String {
-    let digest = Sha256::digest(format!("{}:{ip}", username.to_lowercase()).as_bytes());
-    format!("login:failures:{digest:x}")
+fn failure_key(kind: &str, value: &str) -> String {
+    let digest = Sha256::digest(value.as_bytes());
+    format!("login:failures:{kind}:{digest:x}")
+}
+
+fn account_key(email: &str) -> String {
+    failure_key("account", &email.trim().to_lowercase())
+}
+
+fn ip_key(ip: &str) -> String {
+    failure_key("ip", ip)
 }
 
 pub async fn is_login_limited(
     redis: &ConnectionManager,
-    username: &str,
+    email: &str,
     ip: &str,
 ) -> redis::RedisResult<bool> {
-    let count: Option<i64> = redis.clone().get(failure_key(username, ip)).await?;
-    Ok(count.unwrap_or(0) >= FAILURE_LIMIT)
+    let mut connection = redis.clone();
+    let account_count: Option<i64> = connection.get(account_key(email)).await?;
+    let ip_count: Option<i64> = connection.get(ip_key(ip)).await?;
+    Ok(account_count.unwrap_or(0) >= FAILURE_LIMIT || ip_count.unwrap_or(0) >= FAILURE_LIMIT)
 }
 
 pub async fn record_login_failure(
     redis: &ConnectionManager,
-    username: &str,
+    email: &str,
     ip: &str,
 ) -> redis::RedisResult<()> {
-    let key = failure_key(username, ip);
     let mut connection = redis.clone();
-    let _: Option<String> = redis::cmd("SET")
-        .arg(&key)
-        .arg(0)
-        .arg("NX")
-        .arg("EX")
-        .arg(WINDOW_SECONDS)
-        .query_async(&mut connection)
-        .await?;
-    let _: i64 = connection.incr(&key, 1).await?;
+    for key in [account_key(email), ip_key(ip)] {
+        let _: Option<String> = redis::cmd("SET")
+            .arg(&key)
+            .arg(0)
+            .arg("NX")
+            .arg("EX")
+            .arg(WINDOW_SECONDS)
+            .query_async(&mut connection)
+            .await?;
+        let _: i64 = connection.incr(&key, 1).await?;
+    }
     Ok(())
 }
 
 pub async fn clear_login_failures(
     redis: &ConnectionManager,
-    username: &str,
+    email: &str,
     ip: &str,
 ) -> redis::RedisResult<()> {
-    let _: usize = redis.clone().del(failure_key(username, ip)).await?;
+    let _: usize = redis.clone().del(&[account_key(email), ip_key(ip)]).await?;
+    Ok(())
+}
+
+pub async fn request_limited(
+    redis: &ConnectionManager,
+    action: &str,
+    email: &str,
+    ip: &str,
+    limit: i64,
+) -> redis::RedisResult<bool> {
+    let mut connection = redis.clone();
+    let keys = [
+        failure_key(&format!("{action}:email"), &email.trim().to_lowercase()),
+        failure_key(&format!("{action}:ip"), ip),
+    ];
+    let mut limited = false;
+    for key in keys {
+        let _: Option<String> = redis::cmd("SET")
+            .arg(&key)
+            .arg(0)
+            .arg("NX")
+            .arg("EX")
+            .arg(WINDOW_SECONDS)
+            .query_async(&mut connection)
+            .await?;
+        let count: i64 = connection.incr(&key, 1).await?;
+        limited |= count > limit;
+    }
+    Ok(limited)
+}
+
+fn revoked_access_key(token: &str) -> String {
+    failure_key("access-revoked", token)
+}
+
+pub async fn access_revoked(redis: &ConnectionManager, token: &str) -> redis::RedisResult<bool> {
+    let value: Option<u8> = redis.clone().get(revoked_access_key(token)).await?;
+    Ok(value.is_some())
+}
+
+pub async fn revoke_access(redis: &ConnectionManager, token: &str) -> redis::RedisResult<()> {
+    let _: () = redis.clone().set_ex(revoked_access_key(token), 1_u8, 15 * 60).await?;
     Ok(())
 }
 
@@ -54,9 +107,9 @@ mod tests {
 
     #[test]
     fn login_key_contains_no_username_or_ip() {
-        let key = failure_key("Alice", "127.0.0.1");
+        let key = account_key("Alice");
         assert!(!key.contains("Alice"));
-        assert!(!key.contains("127.0.0.1"));
-        assert_eq!(key, failure_key("alice", "127.0.0.1"));
+        assert_eq!(key, account_key("alice"));
+        assert!(!ip_key("127.0.0.1").contains("127.0.0.1"));
     }
 }

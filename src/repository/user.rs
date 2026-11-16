@@ -3,7 +3,9 @@
 use crate::model::user;
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    QueryFilter, Set,
+    sea_query::{Expr, ExprTrait, Func},
 };
 
 pub async fn find_by_username(
@@ -21,17 +23,34 @@ pub async fn find_by_email(
     email: &str,
 ) -> Result<Option<user::Model>, DbErr> {
     user::Entity::find()
-        .filter(user::Column::Email.eq(email))
+        .filter(Func::lower(Expr::col(user::Column::Email)).eq(email.trim().to_lowercase()))
         .one(db)
         .await
 }
 
-pub async fn find_by_id(db: &DatabaseConnection, id: i32) -> Result<Option<user::Model>, DbErr> {
+pub async fn update_password<C>(db: &C, id: i32, password_hash: String) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let result = user::Entity::update_many()
+        .col_expr(user::Column::PasswordHash, Expr::value(password_hash))
+        .col_expr(user::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(user::Column::Id.eq(id))
+        .exec(db)
+        .await?;
+    if result.rows_affected == 0 {
+        Err(DbErr::RecordNotFound("user not found".to_string()))
+    } else {
+        Ok(())
+    }
+}
+
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i32) -> Result<Option<user::Model>, DbErr> {
     user::Entity::find_by_id(id).one(db).await
 }
 
-pub async fn insert(
-    db: &DatabaseConnection,
+pub async fn insert<C: ConnectionTrait>(
+    db: &C,
     username: &str,
     password_hash: String,
     email: Option<&str>,

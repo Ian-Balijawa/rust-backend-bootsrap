@@ -12,6 +12,11 @@ pub struct Config {
     pub smtp_user: String,
     pub smtp_pass: String,
     pub log_level: String,
+    pub cors_origins: Vec<String>,
+    pub app_env: String,
+    pub jwt_secret: String,
+    pub jwt_issuer: String,
+    pub jwt_audience: String,
 }
 
 impl Config {
@@ -68,6 +73,34 @@ impl Config {
             .ok()
             .or_else(|| conf.get("log", "level"))
             .unwrap_or_else(|| "info".to_string());
+        let app_env = env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+        anyhow::ensure!(
+            app_env == "development" || app_env == "production",
+            "APP_ENV must be development or production"
+        );
+        let jwt_secret = env::var("JWT_SECRET")
+            .map_err(|_| anyhow::anyhow!("missing JWT_SECRET"))?;
+        anyhow::ensure!(jwt_secret.len() >= 32, "JWT_SECRET must be at least 32 bytes");
+        let jwt_issuer = env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-backend-bootstrap".to_string());
+        let jwt_audience = env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-backend-client".to_string());
+        let cors_origins = env::var("CORS_ORIGINS")
+            .ok()
+            .or_else(|| conf.get("http", "cors_origins"))
+            .ok_or_else(|| anyhow::anyhow!("missing CORS_ORIGINS"))?
+            .split(',')
+            .map(str::trim)
+            .filter(|origin| !origin.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        anyhow::ensure!(!cors_origins.is_empty(), "CORS_ORIGINS cannot be empty");
+        for origin in &cors_origins {
+            anyhow::ensure!(
+                origin.starts_with("https://")
+                    || origin.starts_with("http://localhost:")
+                    || origin.starts_with("http://127.0.0.1:"),
+                "CORS_ORIGINS must contain HTTPS origins or local development origins"
+            );
+        }
         Ok(Config {
             db_url,
             redis_url,
@@ -78,6 +111,11 @@ impl Config {
             smtp_user,
             smtp_pass,
             log_level,
+            cors_origins,
+            app_env,
+            jwt_secret,
+            jwt_issuer,
+            jwt_audience,
         })
     }
 }

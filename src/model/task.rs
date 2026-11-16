@@ -12,6 +12,9 @@ pub struct Model {
     pub user_id: i32,
     pub action: String,
     pub schedule_time: DateTimeUtc,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
+    pub deleted_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
