@@ -1,16 +1,16 @@
 use crate::{
     AppState,
-    api::{
+    http::{
         auth::{Required, SystemConfigRead},
-        common::{ApiError, ApiResponse},
+        response::{ApiError, ApiResponse},
     },
 };
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Json, extract::State};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 #[derive(Serialize)]
-struct HealthResponse {
+pub(crate) struct HealthResponse {
     status: &'static str,
     started_at: DateTime<Utc>,
     scheduler_running: bool,
@@ -18,7 +18,7 @@ struct HealthResponse {
 }
 
 #[derive(Serialize)]
-struct ConfigResponse {
+pub(crate) struct ConfigResponse {
     database: String,
     redis: String,
     max_upload_bytes: u64,
@@ -35,7 +35,7 @@ fn database_kind(db_url: &str) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-async fn health_handler(
+pub(crate) async fn health_handler(
     State(state): State<AppState>,
 ) -> Result<Json<ApiResponse<HealthResponse>>, ApiError> {
     state.db.ping().await.map_err(|error| {
@@ -64,7 +64,7 @@ async fn health_handler(
     })))
 }
 
-async fn config_handler(
+pub(crate) async fn config_handler(
     State(state): State<AppState>,
     _permission: Required<SystemConfigRead>,
 ) -> Json<ApiResponse<ConfigResponse>> {
@@ -78,11 +78,4 @@ async fn config_handler(
             && !state.config.smtp_pass.trim().is_empty(),
         log_level: state.config.log_level,
     }))
-}
-
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/health", get(health_handler))
-        .route("/live", get(|| async { "ok" }))
-        .route("/app-info", get(config_handler))
 }

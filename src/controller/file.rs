@@ -1,21 +1,19 @@
 use crate::{
     AppState,
-    api::{
+    http::{
         auth::{FileRead, FileWrite, Required},
-        common::{ApiError, ApiResponse},
+        response::{ApiError, ApiResponse},
     },
-    service,
+    repository, service,
 };
 use axum::{
-    Json, Router,
+    Json,
     body::Body,
     extract::{Path, Request, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
 };
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
-use tokio::fs;
 use tokio_util::io::ReaderStream;
 
 fn upload_name(headers: &HeaderMap) -> Result<&str, ApiError> {
@@ -35,7 +33,7 @@ fn upload_name(headers: &HeaderMap) -> Result<&str, ApiError> {
     Ok(name)
 }
 
-async fn upload(
+pub(crate) async fn upload(
     State(state): State<AppState>,
     user: Required<FileWrite>,
     request: Request,
@@ -83,7 +81,7 @@ async fn upload(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(model))))
 }
 
-async fn metadata(
+pub(crate) async fn metadata(
     State(state): State<AppState>,
     user: Required<FileRead>,
     Path(id): Path<String>,
@@ -92,21 +90,21 @@ async fn metadata(
     Ok(Json(ApiResponse::ok(model)))
 }
 
-async fn download(
+pub(crate) async fn download(
     State(state): State<AppState>,
     user: Required<FileRead>,
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
     let model = authorized_file(&state, &user, &id).await?;
-    let path = service::file::path_for(&state.config.upload_dir, &model.id)
-        .ok_or_else(|| ApiError::internal("invalid stored file id"))?;
-    let file = fs::File::open(path).await.map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            ApiError::not_found("file content not found")
-        } else {
-            ApiError::internal(error)
-        }
-    })?;
+    let file = service::file::open(&state.config.upload_dir, &model.id)
+        .await
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                ApiError::not_found("file content not found")
+            } else {
+                ApiError::internal(error)
+            }
+        })?;
     let fallback: String = model
         .filename
         .chars()
@@ -140,7 +138,7 @@ async fn download(
     Ok(response)
 }
 
-async fn delete(
+pub(crate) async fn delete(
     State(state): State<AppState>,
     user: Required<FileWrite>,
     Path(id): Path<String>,
@@ -160,7 +158,7 @@ async fn authorized_file<P>(
     if service::file::path_for(&state.config.upload_dir, id).is_none() {
         return Err(ApiError::not_found("file not found"));
     }
-    let model = service::file::find(&state.db, id)
+    let model = repository::file::find(&state.db, id)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("file not found"))?;
@@ -168,11 +166,4 @@ async fn authorized_file<P>(
         return Err(ApiError::forbidden("cannot access another user's file"));
     }
     Ok(model)
-}
-
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/", post(upload))
-        .route("/{id}", get(metadata).delete(delete))
-        .route("/{id}/download", get(download))
 }

@@ -4,7 +4,7 @@ This audit reflects this repository as of 2026-11-16. The previous version descr
 
 | Area | Current state | Follow-up |
 | --- | --- | --- |
-| Architecture | Axum handlers, SeaORM models and migrations, services, and scheduler are separated. Files have their own API, model, service, and migration. | Keep feature boundaries clear as the scaffold grows. |
+| Architecture | Routes, controllers, HTTP support, repositories, services, SeaORM models, migrations, and scheduler are separated. The React client is external; there are no server-rendered views. | Keep feature boundaries clear as the scaffold grows. |
 | PostgreSQL | The application accepts PostgreSQL URLs, uses SeaORM for sessions, and has versioned migrations. `make migrate` applies migrations and RBAC seeds. Runtime checks for pending migrations without schema changes. | Use separate migration and runtime database roles in deployment. |
 | Redis | Startup and `/health` verify Redis. Login failures are limited to five per username and TCP peer IP for 15 minutes; keys contain a SHA-256 digest rather than the username or IP. | Monitor availability; login fails closed if Redis is unavailable. Add broader per-IP request limits at the proxy. |
 | Authentication and authorization | Passwords use bcrypt, sessions are stored in PostgreSQL, and routes check RBAC permissions. File access checks ownership or admin permission. | Add a password policy, registration controls, account-level lockout, and session cleanup if required by the product. |

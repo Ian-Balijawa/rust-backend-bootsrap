@@ -1,6 +1,6 @@
 # Axum backend bootstrap
 
-A Rust API starter with Axum, SeaORM, PostgreSQL, Redis, role-based access control, persistent scheduling, SMTP mail, and local file storage.
+A Rust JSON API starter for a separate React client, with Axum, SeaORM, PostgreSQL, Redis, role-based access control, persistent scheduling, SMTP mail, and local file storage. See the [module layout](architecture.md). There is no server-rendered view layer.
 
 ## Quick start
 
@@ -43,10 +43,10 @@ curl -X POST http://localhost:8000/files/ \
   --data-binary @report.pdf
 ```
 
-The response contains a UUID file ID. Download with `curl -OJ -H "Authorization: Bearer $TOKEN" http://localhost:8000/files/ID/download`. Uploads stream to a temporary file and enforce the configured size limit while streaming. The PostgreSQL `files` table stores metadata; file bytes live under `UPLOAD_DIR` with UUID names. Back up both the database and upload directory together. See [API guide](docs/api.md) and [scheduler guide](docs/scheduler_usage.md).
+The response contains a UUID file ID. Download with `curl -OJ -H "Authorization: Bearer $TOKEN" http://localhost:8000/files/ID/download`. Uploads stream to a temporary file and enforce the configured size limit while streaming. The PostgreSQL `files` table stores metadata; file bytes live under `UPLOAD_DIR` with UUID names. Back up both the database and upload directory together. See [API guide](api.md) and [scheduler guide](scheduler_usage.md).
 
 ## Checks and deployment
 
 `make test-integration` requires `TEST_DATABASE_URL` pointing to a disposable PostgreSQL database and `TEST_REDIS_URL` pointing to Redis. It exercises migrations, RBAC, sessions, upload storage, and login throttling. Unit tests use SQLite only for isolated scheduler tests; the application configuration accepts PostgreSQL URLs only.
 
-Run `make migrate` before starting the API. A deployment can use separate migration and runtime database roles so the API does not need schema privileges. Restrict the upload directory to the API process identity. Terminate TLS at a reverse proxy, set request limits there, and arrange encrypted offsite backups, restore drills, monitoring, and alerts. See [audit](docs/best-practices-audit.md) for current repository coverage and outstanding operations work.
+Run `make migrate` before starting the API. A deployment can use separate migration and runtime database roles so the API does not need schema privileges. Restrict the upload directory to the API process identity. Terminate TLS at a reverse proxy, set request limits there, and arrange encrypted offsite backups, restore drills, monitoring, and alerts. See [audit](best-practices-audit.md) for current repository coverage and outstanding operations work.

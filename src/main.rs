@@ -1,7 +1,10 @@
-mod api;
 mod config;
+mod controller;
+mod http;
 mod migration;
 mod model;
+mod repository;
+mod routes;
 mod scheduler;
 mod service;
 #[cfg(test)]
@@ -13,9 +16,7 @@ use crate::scheduler::executor::MailTaskExecutor;
 use crate::scheduler::task_scheduler::TaskScheduler;
 use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use std::{
     net::{IpAddr, SocketAddr},
@@ -74,19 +75,12 @@ async fn create_admin(
 
     let generated = password.is_none();
     let password = password.unwrap_or_else(generate_password);
-    let now = Utc::now();
-    let user = crate::model::user::ActiveModel {
-        username: Set(username.to_string()),
-        password_hash: Set(bcrypt::hash(&password, bcrypt::DEFAULT_COST)?),
-        email: Set(None),
-        is_active: Set(true),
-        created_at: Set(Some(now)),
-        updated_at: Set(Some(now)),
-        last_login_at: Set(None),
-        last_login_ip: Set(None),
-        ..Default::default()
-    }
-    .insert(db)
+    let user = repository::user::insert(
+        db,
+        username,
+        bcrypt::hash(&password, bcrypt::DEFAULT_COST)?,
+        None,
+    )
     .await?;
     crate::service::rbac::assign_role(db, user.id, crate::service::rbac::ADMIN_ROLE).await?;
     if generated {
@@ -134,9 +128,7 @@ async fn shutdown_signal(scheduler: Arc<TaskScheduler>) {
 }
 
 async fn user_exists(db: &DatabaseConnection, username: &str) -> anyhow::Result<bool> {
-    Ok(crate::model::user::Entity::find()
-        .filter(crate::model::user::Column::Username.eq(username))
-        .one(db)
+    Ok(repository::user::find_by_username(db, username)
         .await?
         .is_some())
 }
@@ -201,7 +193,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler: Arc::clone(&scheduler),
         started_at: Utc::now(),
     };
-    let app = api::create_router().with_state(state).layer(
+    let app = routes::create_router().with_state(state).layer(
         TraceLayer::new_for_http()
             .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
             .on_response(DefaultOnResponse::new().level(Level::INFO)),

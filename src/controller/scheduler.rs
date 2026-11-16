@@ -1,21 +1,20 @@
 use crate::{
     AppState,
-    api::{
+    http::{
         auth::{Required, SchedulerRead, SchedulerWrite},
-        common::{ApiError, ApiResponse},
+        response::{ApiError, ApiResponse},
     },
 };
 use axum::{
-    Json, Router,
+    Json,
     extract::{Path, State},
-    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum SchedulerTaskKind {
+pub(crate) enum SchedulerTaskKind {
     OneTime,
     Recurring,
     Scheduled,
@@ -23,7 +22,7 @@ enum SchedulerTaskKind {
 }
 
 #[derive(Deserialize)]
-struct CreateSchedulerTaskRequest {
+pub(crate) struct CreateSchedulerTaskRequest {
     name: String,
     executor_type: String,
     task_type: SchedulerTaskKind,
@@ -34,7 +33,7 @@ struct CreateSchedulerTaskRequest {
     max_retries: Option<u32>,
 }
 
-async fn list_tasks_handler(
+pub(crate) async fn list_tasks_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerRead>,
 ) -> Json<ApiResponse<Vec<crate::scheduler::task_scheduler::TaskInfo>>> {
@@ -48,7 +47,7 @@ async fn list_tasks_handler(
     Json(ApiResponse::ok(tasks))
 }
 
-async fn get_task_handler(
+pub(crate) async fn get_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerRead>,
     Path(id): Path<String>,
@@ -61,28 +60,24 @@ async fn get_task_handler(
     Ok(Json(ApiResponse::ok(task.to_info())))
 }
 
-async fn list_task_executions_handler(
+pub(crate) async fn list_task_executions_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerRead>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<Vec<crate::model::task_execution::Model>>>, ApiError> {
-    use sea_orm::EntityTrait;
-
-    let exists = crate::model::scheduler_task::Entity::find_by_id(&id)
-        .one(&state.db)
+    let exists = crate::repository::scheduler::task_exists(&state.db, &id)
         .await
-        .map_err(ApiError::internal)?
-        .is_some();
+        .map_err(ApiError::internal)?;
     if !exists {
         return Err(ApiError::not_found("scheduler task not found"));
     }
-    let executions = crate::scheduler::store::list_executions(&state.db, &id)
+    let executions = crate::repository::scheduler::list_executions(&state.db, &id)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(ApiResponse::ok(executions)))
 }
 
-async fn create_task_handler(
+pub(crate) async fn create_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerWrite>,
     Json(payload): Json<CreateSchedulerTaskRequest>,
@@ -151,7 +146,7 @@ async fn create_task_handler(
     Ok(Json(ApiResponse::ok(serde_json::json!({ "id": task_id }))))
 }
 
-async fn run_task_handler(
+pub(crate) async fn run_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerWrite>,
     Path(id): Path<String>,
@@ -165,7 +160,7 @@ async fn run_task_handler(
     }
 }
 
-async fn delete_task_handler(
+pub(crate) async fn delete_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerWrite>,
     Path(id): Path<String>,
@@ -175,15 +170,4 @@ async fn delete_task_handler(
     } else {
         Err(ApiError::not_found("scheduler task not found"))
     }
-}
-
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/tasks", get(list_tasks_handler).post(create_task_handler))
-        .route(
-            "/tasks/{id}",
-            get(get_task_handler).delete(delete_task_handler),
-        )
-        .route("/tasks/{id}/executions", get(list_task_executions_handler))
-        .route("/tasks/{id}/run", post(run_task_handler))
 }

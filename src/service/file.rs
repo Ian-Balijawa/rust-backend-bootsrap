@@ -1,8 +1,8 @@
 use crate::model::file;
+use crate::repository;
 use axum::body::Body;
-use chrono::Utc;
 use futures_util::StreamExt;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, Set};
+use sea_orm::{DatabaseConnection, DbErr};
 use std::path::{Path, PathBuf};
 use tokio::{fs, io::AsyncWriteExt};
 use uuid::Uuid;
@@ -23,6 +23,11 @@ pub fn path_for(upload_dir: &Path, id: &str) -> Option<PathBuf> {
     Uuid::parse_str(id)
         .ok()
         .map(|uuid| upload_dir.join(uuid.to_string()))
+}
+
+pub async fn open(upload_dir: &Path, id: &str) -> std::io::Result<fs::File> {
+    let path = path_for(upload_dir, id).ok_or(std::io::ErrorKind::InvalidInput)?;
+    fs::File::open(path).await
 }
 
 pub async fn save(
@@ -59,15 +64,14 @@ pub async fn save(
         output.flush().await?;
         drop(output);
         fs::rename(&temporary_path, &path).await?;
-        let model = file::ActiveModel {
-            id: Set(id),
-            owner_id: Set(owner_id),
-            filename: Set(filename.to_string()),
-            content_type: Set(content_type.to_string()),
-            size_bytes: Set(i64::try_from(size).map_err(|_| UploadError::TooLarge)?),
-            created_at: Set(Utc::now()),
-        }
-        .insert(db)
+        let model = repository::file::insert(
+            db,
+            id,
+            owner_id,
+            filename,
+            content_type,
+            i64::try_from(size).map_err(|_| UploadError::TooLarge)?,
+        )
         .await?;
         Ok(model)
     }
@@ -77,10 +81,6 @@ pub async fn save(
         let _ = fs::remove_file(&path).await;
     }
     result
-}
-
-pub async fn find(db: &DatabaseConnection, id: &str) -> Result<Option<file::Model>, DbErr> {
-    file::Entity::find_by_id(id).one(db).await
 }
 
 pub async fn delete(db: &DatabaseConnection, upload_dir: &Path, id: &str) -> anyhow::Result<()> {
@@ -93,7 +93,7 @@ pub async fn delete(db: &DatabaseConnection, upload_dir: &Path, id: &str) -> any
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
         Err(error) => return Err(error.into()),
     };
-    if let Err(error) = file::Entity::delete_by_id(id).exec(db).await {
+    if let Err(error) = repository::file::delete(db, id).await {
         if moved {
             fs::rename(&tombstone, &path).await?;
         }

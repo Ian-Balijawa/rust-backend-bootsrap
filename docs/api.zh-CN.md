@@ -121,7 +121,7 @@ Content-Type: application/json
 
 ## 权限扩展
 
-权限码和类型标记位于 `src/api/auth.rs`。权限数据由 SeaORM RBAC 的 `sea_orm_*` 表维护，逻辑资源为 `api`；新增受保护接口时定义标记，并把 `Required<权限类型>` 放入 handler 参数即可同时完成认证和授权。
+权限码和类型标记位于 `src/http/auth.rs`。权限数据由 SeaORM RBAC 的 `sea_orm_*` 表维护，逻辑资源为 `api`；新增受保护接口时定义标记，并把 `Required<权限类型>` 放入 handler 参数即可同时完成认证和授权。
 
 ## 文件服务
 

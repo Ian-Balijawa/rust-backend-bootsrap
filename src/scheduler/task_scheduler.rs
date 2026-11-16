@@ -179,7 +179,7 @@ impl TaskScheduler {
         let Some(db) = &self.db else {
             return Ok(0);
         };
-        let restored = crate::scheduler::store::load_recoverable_tasks(db)
+        let restored = crate::repository::scheduler::load_recoverable_tasks(db)
             .await
             .map_err(|error| error.to_string())?;
         let mut count = 0;
@@ -193,7 +193,7 @@ impl TaskScheduler {
                 _ => task.next_run.unwrap_or_else(Utc::now),
             };
             task.next_run = Some(run_at);
-            crate::scheduler::store::update_task(db, &task)
+            crate::repository::scheduler::update_task(db, &task)
                 .await
                 .map_err(|error| error.to_string())?;
             self.tasks
@@ -323,7 +323,7 @@ impl TaskScheduler {
         };
 
         if let Some(db) = &self.db {
-            crate::scheduler::store::insert_task(db, &task)
+            crate::repository::scheduler::insert_task(db, &task)
                 .await
                 .map_err(|error| error.to_string())?;
         }
@@ -356,8 +356,8 @@ impl TaskScheduler {
             task.status = TaskStatus::Cancelled;
             task.next_run = None;
             if let Some(db) = &self.db {
-                let _ = crate::scheduler::store::update_task(db, &task).await;
-                let _ = crate::scheduler::store::cancel_running_executions(
+                let _ = crate::repository::scheduler::update_task(db, &task).await;
+                let _ = crate::repository::scheduler::cancel_running_executions(
                     db,
                     std::slice::from_ref(&task.id),
                 )
@@ -482,9 +482,9 @@ impl TaskScheduler {
                 None
             };
             let execution_id = if let Some(db) = &db {
-                match crate::scheduler::store::start_execution(db, &task).await {
+                match crate::repository::scheduler::start_execution(db, &task).await {
                     Ok(id) => {
-                        let _ = crate::scheduler::store::update_task(db, &task).await;
+                        let _ = crate::repository::scheduler::update_task(db, &task).await;
                         Some(id)
                     }
                     Err(error) => {
@@ -497,7 +497,7 @@ impl TaskScheduler {
                             None
                         };
                         if let Some(failed) = failed {
-                            let _ = crate::scheduler::store::update_task(db, &failed).await;
+                            let _ = crate::repository::scheduler::update_task(db, &failed).await;
                         }
                         return;
                     }
@@ -601,7 +601,7 @@ impl TaskScheduler {
                     } else {
                         "completed"
                     };
-                    let _ = crate::scheduler::store::finish_execution(
+                    let _ = crate::repository::scheduler::finish_execution(
                         db,
                         &execution_id,
                         status,
@@ -609,7 +609,7 @@ impl TaskScheduler {
                     )
                     .await;
                 }
-                let _ = crate::scheduler::store::update_task(db, &persisted).await;
+                let _ = crate::repository::scheduler::update_task(db, &persisted).await;
             }
             if let Some(entry) = next_entry {
                 queue.lock().await.push(entry);
@@ -674,10 +674,11 @@ impl TaskScheduler {
         drop(tasks);
         if let Some(db) = &self.db {
             for task in &changed {
-                let _ = crate::scheduler::store::update_task(db, task).await;
+                let _ = crate::repository::scheduler::update_task(db, task).await;
             }
             let _ =
-                crate::scheduler::store::cancel_running_executions(db, &interrupted_task_ids).await;
+                crate::repository::scheduler::cancel_running_executions(db, &interrupted_task_ids)
+                    .await;
         }
         tracing::info!("task scheduler stopped");
     }

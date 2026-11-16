@@ -1,30 +1,29 @@
 use crate::{
     AppState,
-    api::{
+    http::{
         auth::{Required, UserManage},
-        common::{ApiError, ApiResponse},
+        response::{ApiError, ApiResponse},
     },
     service,
     service::auth::AuthenticatedUser,
 };
 use axum::{
-    Json, Router,
+    Json,
     extract::{ConnectInfo, Path, State},
     http::{HeaderMap, header::USER_AGENT},
-    routing::{get, post, put},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Deserialize)]
-struct LoginRequest {
+pub(crate) struct LoginRequest {
     username: String,
     password: String,
 }
 
 #[derive(Serialize)]
-struct LoginResponse {
+pub(crate) struct LoginResponse {
     token: String,
     token_type: &'static str,
     expires_at: DateTime<Utc>,
@@ -33,14 +32,14 @@ struct LoginResponse {
 }
 
 #[derive(Deserialize)]
-struct RegisterRequest {
+pub(crate) struct RegisterRequest {
     username: String,
     password: String,
     email: String,
 }
 
 #[derive(Serialize)]
-struct CurrentUserResponse {
+pub(crate) struct CurrentUserResponse {
     id: i32,
     username: String,
     email: Option<String>,
@@ -53,104 +52,48 @@ struct CurrentUserResponse {
 }
 
 #[derive(Deserialize)]
-struct ReplaceRoleRequest {
+pub(crate) struct ReplaceRoleRequest {
     role: String,
 }
 
-async fn login_handler(
+pub(crate) async fn login_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<ApiResponse<LoginResponse>>, ApiError> {
     let ip = remote_addr.ip().to_string();
-    if service::redis::is_login_limited(&state.redis, &payload.username, &ip)
-        .await
-        .map_err(ApiError::internal)?
-    {
-        return Err(ApiError {
-            status: axum::http::StatusCode::TOO_MANY_REQUESTS,
-            message: "too many login attempts; try again later".to_string(),
-        });
-    }
     let user_agent = headers
         .get(USER_AGENT)
         .and_then(|value| value.to_str().ok());
-    let user = service::user::find_user_by_username(&state.db, &payload.username)
-        .await
-        .map_err(ApiError::internal)?;
-    let Some(user) = user else {
-        service::redis::record_login_failure(&state.redis, &payload.username, &ip)
-            .await
-            .map_err(ApiError::internal)?;
-        let _ = service::login_log::record(
-            &state.db,
-            None,
-            &payload.username,
-            false,
-            &ip,
-            user_agent,
-            Some("invalid credentials"),
-        )
-        .await;
-        return Err(ApiError::unauthorized("invalid username or password"));
-    };
-    if !user.is_active {
-        let _ = service::login_log::record(
-            &state.db,
-            Some(user.id),
-            &payload.username,
-            false,
-            &ip,
-            user_agent,
-            Some("account disabled"),
-        )
-        .await;
-        return Err(ApiError::forbidden("user account is disabled"));
-    }
-    if !service::user::verify_password(&user.password_hash, &payload.password) {
-        service::redis::record_login_failure(&state.redis, &payload.username, &ip)
-            .await
-            .map_err(ApiError::internal)?;
-        let _ = service::login_log::record(
-            &state.db,
-            Some(user.id),
-            &payload.username,
-            false,
-            &ip,
-            user_agent,
-            Some("invalid credentials"),
-        )
-        .await;
-        return Err(ApiError::unauthorized("invalid username or password"));
-    }
-
-    let (user, token, expires_at) = service::user::record_login(&state.db, user, &ip)
-        .await
-        .map_err(ApiError::internal)?;
-    service::redis::clear_login_failures(&state.redis, &payload.username, &ip)
-        .await
-        .map_err(ApiError::internal)?;
-    let _ = service::login_log::record(
+    let result = service::auth::login(
         &state.db,
-        Some(user.id),
-        &user.username,
-        true,
+        &state.redis,
+        &payload.username,
+        &payload.password,
         &ip,
         user_agent,
-        None,
     )
-    .await;
+    .await
+    .map_err(|error| match error {
+        service::auth::LoginError::Limited => ApiError {
+            status: axum::http::StatusCode::TOO_MANY_REQUESTS,
+            message: error.to_string(),
+        },
+        service::auth::LoginError::InvalidCredentials => ApiError::unauthorized(error.to_string()),
+        service::auth::LoginError::Disabled => ApiError::forbidden(error.to_string()),
+        service::auth::LoginError::Internal(error) => ApiError::internal(error),
+    })?;
     Ok(Json(ApiResponse::ok(LoginResponse {
-        token,
+        token: result.token,
         token_type: "Bearer",
-        expires_at,
-        user_id: user.id,
-        last_login_at: user.last_login_at,
+        expires_at: result.expires_at,
+        user_id: result.user_id,
+        last_login_at: result.last_login_at,
     })))
 }
 
-async fn register_handler(
+pub(crate) async fn register_handler(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<ApiResponse<()>>, ApiError> {
@@ -179,7 +122,7 @@ async fn register_handler(
     Ok(Json(ApiResponse::message("registration successful")))
 }
 
-async fn me_handler(user: AuthenticatedUser) -> Json<ApiResponse<CurrentUserResponse>> {
+pub(crate) async fn me_handler(user: AuthenticatedUser) -> Json<ApiResponse<CurrentUserResponse>> {
     let mut permissions: Vec<_> = user.permissions.iter().cloned().collect();
     permissions.sort();
     Json(ApiResponse::ok(CurrentUserResponse {
@@ -195,7 +138,7 @@ async fn me_handler(user: AuthenticatedUser) -> Json<ApiResponse<CurrentUserResp
     }))
 }
 
-async fn logout_handler(
+pub(crate) async fn logout_handler(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<ApiResponse<()>>, ApiError> {
@@ -205,7 +148,7 @@ async fn logout_handler(
     Ok(Json(ApiResponse::message("logged out")))
 }
 
-async fn replace_role_handler(
+pub(crate) async fn replace_role_handler(
     State(state): State<AppState>,
     _permission: Required<UserManage>,
     Path(user_id): Path<i32>,
@@ -218,13 +161,4 @@ async fn replace_role_handler(
         .await
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
     Ok(Json(ApiResponse::message("user role updated")))
-}
-
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/login", post(login_handler))
-        .route("/register", post(register_handler))
-        .route("/me", get(me_handler))
-        .route("/logout", post(logout_handler))
-        .route("/{id}/role", put(replace_role_handler))
 }

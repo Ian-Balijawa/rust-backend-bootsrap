@@ -53,7 +53,7 @@ Create or update with `{"content":"text or serialized JSON"}`.
 - `GET /health`: public
 - `GET /app-info`: `system_config:read`
 
-Permission markers live in `src/api/auth.rs`. SeaORM RBAC stores them in its `sea_orm_*` tables under the logical `api` resource. Add `Required<PermissionType>` to a handler to perform authentication and authorization before business logic runs.
+Permission markers live in `src/http/auth.rs`. SeaORM RBAC stores them in its `sea_orm_*` tables under the logical `api` resource. Add `Required<PermissionType>` to a handler to perform authentication and authorization before business logic runs.
 
 ## Files
 

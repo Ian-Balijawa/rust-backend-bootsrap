@@ -1,6 +1,7 @@
 use crate::init_database;
 use axum::{
     body::{Body, to_bytes},
+    extract::ConnectInfo,
     http::{Request, StatusCode},
 };
 use chrono::Utc;
@@ -24,13 +25,13 @@ async fn postgres_redis_and_file_roundtrip() {
     let db = Database::connect(database_url).await.unwrap();
     init_database(&db).await.unwrap();
     init_database(&db).await.unwrap();
-    let configs = crate::service::system_config::list(&db).await.unwrap();
+    let configs = crate::repository::system_config::list(&db).await.unwrap();
     assert_eq!(configs.len(), 3);
 
     let username = format!("test-{}", uuid::Uuid::new_v4());
     let user = crate::model::user::ActiveModel {
         username: Set(username.clone()),
-        password_hash: Set("hash".to_string()),
+        password_hash: Set(bcrypt::hash("password123", bcrypt::DEFAULT_COST).unwrap()),
         email: Set(None),
         is_active: Set(true),
         created_at: Set(Some(Utc::now())),
@@ -137,7 +138,7 @@ async fn postgres_redis_and_file_roundtrip() {
     let http_dir = std::env::temp_dir().join(format!("upload-http-test-{}", uuid::Uuid::new_v4()));
     let scheduler =
         Arc::new(crate::scheduler::task_scheduler::TaskScheduler::with_database(db.clone(), 1));
-    let app = crate::api::file::router().with_state(crate::AppState {
+    let state = crate::AppState {
         db: db.clone(),
         redis: redis.clone(),
         config: crate::config::Config {
@@ -153,7 +154,8 @@ async fn postgres_redis_and_file_roundtrip() {
         },
         scheduler,
         started_at: Utc::now(),
-    });
+    };
+    let app = crate::routes::file::router().with_state(state.clone());
     let unauthorized = app
         .clone()
         .oneshot(
@@ -233,4 +235,23 @@ async fn postgres_redis_and_file_roundtrip() {
         .unwrap();
     assert_eq!(deleted.status(), StatusCode::OK);
     tokio::fs::remove_dir(http_dir).await.unwrap();
+
+    let user_app = crate::routes::user::router().with_state(state);
+    let peer: std::net::SocketAddr = "127.0.0.1:42000".parse().unwrap();
+    for (password, expected) in [
+        ("wrong-password", StatusCode::UNAUTHORIZED),
+        ("password123", StatusCode::OK),
+    ] {
+        let mut request = Request::builder()
+            .uri("/login")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({"username": username, "password": password}).to_string(),
+            ))
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(peer));
+        let response = user_app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), expected);
+    }
 }

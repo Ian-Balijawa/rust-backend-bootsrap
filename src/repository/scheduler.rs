@@ -9,6 +9,13 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+pub async fn task_exists(db: &DatabaseConnection, id: &str) -> Result<bool, sea_orm::DbErr> {
+    Ok(scheduler_task::Entity::find_by_id(id)
+        .one(db)
+        .await?
+        .is_some())
+}
+
 pub async fn insert_task(db: &DatabaseConnection, task: &Task) -> Result<(), sea_orm::DbErr> {
     scheduler_task::ActiveModel {
         id: Set(task.id.clone()),

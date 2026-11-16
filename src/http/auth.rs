@@ -1,4 +1,4 @@
-use crate::{AppState, api::common::ApiError, service::auth::AuthenticatedUser};
+use crate::{AppState, http::response::ApiError, service::auth::AuthenticatedUser};
 use axum::{
     extract::FromRequestParts,
     http::{header::AUTHORIZATION, request::Parts},

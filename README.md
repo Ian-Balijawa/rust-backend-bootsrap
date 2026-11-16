@@ -1,6 +1,6 @@
 # Axum backend bootstrap
 
-A Rust API starter with Axum, SeaORM, PostgreSQL, Redis, role-based access control, persistent scheduling, SMTP mail, and local file storage.
+A Rust JSON API starter for a separate React client, with Axum, SeaORM, PostgreSQL, Redis, role-based access control, persistent scheduling, SMTP mail, and local file storage. See the [module layout](docs/architecture.md).
 
 ## Quick start
 
