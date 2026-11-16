@@ -1,6 +1,6 @@
 # API 文档
 
-服务默认监听 `http://127.0.0.1:8000`。除注册、登录和健康检查外，接口均使用：
+服务默认监听 `0.0.0.0:8000`，本机可通过 `http://127.0.0.1:8000` 访问。除注册、登录和健康检查外，接口均使用：
 
 ```text
 Authorization: Bearer <token>
@@ -122,3 +122,14 @@ Content-Type: application/json
 ## 权限扩展
 
 权限码和类型标记位于 `src/api/auth.rs`。权限数据由 SeaORM RBAC 的 `sea_orm_*` 表维护，逻辑资源为 `api`；新增受保护接口时定义标记，并把 `Required<权限类型>` 放入 handler 参数即可同时完成认证和授权。
+
+## 文件服务
+
+文件接口需要 Bearer token。用户仅能操作自己的文件，管理员可操作所有文件。
+
+- `POST /files/`（`file:write`）：使用原始请求体上传，提供 `X-File-Name`（最多 255 字节，不能包含路径分隔符），可提供 `Content-Type`。成功返回 201 和文件元数据，超过 `MAX_UPLOAD_BYTES` 返回 413。
+- `GET /files/{id}`（`file:read`）：获取元数据。
+- `GET /files/{id}/download`（`file:read`）：流式下载文件。
+- `DELETE /files/{id}`（`file:write`）：删除文件和元数据。
+
+`GET /live` 检查进程；`GET /health` 检查 PostgreSQL 和 Redis，依赖不可用时返回 503。相同用户名和 TCP 对端 IP 在 15 分钟内登录失败五次后，登录接口返回 429。

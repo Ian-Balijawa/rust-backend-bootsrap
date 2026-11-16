@@ -27,6 +27,7 @@ use tracing::Level;
 #[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
+    pub redis: redis::aio::ConnectionManager,
     pub config: Config,
     pub scheduler: Arc<TaskScheduler>,
     pub started_at: DateTime<Utc>,
@@ -45,6 +46,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Migrate,
     CreateAdmin {
         #[arg(short, long, default_value = "admin")]
         username: String,
@@ -61,14 +63,6 @@ async fn init_database(db: &DatabaseConnection) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn database_url_for_startup(url: &str) -> String {
-    if !url.starts_with("sqlite:") || url.contains("mode=") || url.contains(":memory:") {
-        return url.to_string();
-    }
-    let separator = if url.contains('?') { '&' } else { '?' };
-    format!("{url}{separator}mode=rwc")
-}
-
 async fn create_admin(
     db: &DatabaseConnection,
     username: &str,
@@ -78,6 +72,7 @@ async fn create_admin(
         anyhow::bail!("user already exists: {username}");
     }
 
+    let generated = password.is_none();
     let password = password.unwrap_or_else(generate_password);
     let now = Utc::now();
     let user = crate::model::user::ActiveModel {
@@ -94,7 +89,10 @@ async fn create_admin(
     .insert(db)
     .await?;
     crate::service::rbac::assign_role(db, user.id, crate::service::rbac::ADMIN_ROLE).await?;
-    tracing::info!(username, password, "created administrator account");
+    if generated {
+        println!("Generated administrator password: {password}");
+    }
+    tracing::info!(username, "created administrator account");
     Ok(())
 }
 
@@ -144,11 +142,11 @@ async fn user_exists(db: &DatabaseConnection, username: &str) -> anyhow::Result<
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let bind_address = SocketAddr::new(cli.bind_ip, cli.port);
     // Read Configuration
-    let config = Config::from_ini("config.ini").expect("Failed to read configuration file");
+    let config = Config::from_ini("config.ini")?;
 
     // Initialize log
     tracing_subscriber::fmt()
@@ -157,20 +155,29 @@ async fn main() {
         .init();
 
     // Initialize the database connection pool
-    let database_url = database_url_for_startup(&config.db_url);
-    let db = Database::connect(&database_url)
-        .await
-        .expect("Database connection failed");
-    init_database(&db)
-        .await
-        .expect("Database initialization failed");
+    let db = Database::connect(&config.db_url).await?;
 
-    if let Some(Command::CreateAdmin { username, password }) = cli.command {
-        create_admin(&db, &username, password)
-            .await
-            .expect("Failed to create administrator account");
-        return;
+    match cli.command {
+        Some(Command::Migrate) => {
+            init_database(&db).await?;
+            return Ok(());
+        }
+        Some(Command::CreateAdmin { username, password }) => {
+            create_admin(&db, &username, password).await?;
+            return Ok(());
+        }
+        None => {}
     }
+    anyhow::ensure!(
+        migration::Migrator::get_pending_migrations_read_only(&db)
+            .await?
+            .is_empty(),
+        "database migrations are pending; run `make migrate`"
+    );
+
+    let redis_client = redis::Client::open(config.redis_url.as_str())?;
+    let mut redis = redis::aio::ConnectionManager::new(redis_client).await?;
+    let _: String = redis::cmd("PING").query_async(&mut redis).await?;
 
     // Initialize the scheduler
     let scheduler = Arc::new(TaskScheduler::with_database(db.clone(), 100));
@@ -183,12 +190,13 @@ async fn main() {
     scheduler
         .restore_tasks()
         .await
-        .expect("Failed to restore scheduler tasks");
+        .map_err(anyhow::Error::msg)?;
     // Start the scheduler
     scheduler.start().await;
 
     let state = AppState {
         db,
+        redis,
         config,
         scheduler: Arc::clone(&scheduler),
         started_at: Utc::now(),
@@ -200,12 +208,12 @@ async fn main() {
     );
 
     tracing::info!(address = %bind_address, "listening");
-    let listener = tokio::net::TcpListener::bind(bind_address).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(bind_address).await?;
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal(Arc::clone(&scheduler)))
-    .await
-    .unwrap();
+    .await?;
+    Ok(())
 }

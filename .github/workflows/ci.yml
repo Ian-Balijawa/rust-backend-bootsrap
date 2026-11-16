@@ -1,0 +1,52 @@
+name: CI
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: axum_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d axum_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/axum_test
+      TEST_REDIS_URL: redis://localhost:6379/
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add clippy rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo test -- --ignored
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo install cargo-audit --locked
+      # SQLite is enabled only for in-memory scheduler tests. SQLx 0.9 pins
+      # libsqlite3-sys below the fixed 0.39 release; production uses PostgreSQL.
+      - run: cargo audit --ignore RUSTSEC-2026-0459

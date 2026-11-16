@@ -9,7 +9,6 @@ pub async fn send_mail_with_config(
     subject: &str,
     body: &str,
 ) -> Result<()> {
-    tracing::debug!("Send Mail: {:?}", config);
     let smtp_server = &config.smtp_server;
     let smtp_port = config.smtp_port;
     let smtp_user = &config.smtp_user;

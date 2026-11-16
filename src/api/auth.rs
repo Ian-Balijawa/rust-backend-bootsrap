@@ -81,6 +81,8 @@ macro_rules! permission {
 
 permission!(TaskRead, "task:read");
 permission!(TaskWrite, "task:write");
+permission!(FileRead, "file:read");
+permission!(FileWrite, "file:write");
 permission!(SchedulerRead, "scheduler:read");
 permission!(SchedulerWrite, "scheduler:write");
 permission!(SystemConfigRead, "system_config:read");

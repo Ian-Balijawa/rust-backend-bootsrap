@@ -64,6 +64,15 @@ async fn login_handler(
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<ApiResponse<LoginResponse>>, ApiError> {
     let ip = remote_addr.ip().to_string();
+    if service::redis::is_login_limited(&state.redis, &payload.username, &ip)
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(ApiError {
+            status: axum::http::StatusCode::TOO_MANY_REQUESTS,
+            message: "too many login attempts; try again later".to_string(),
+        });
+    }
     let user_agent = headers
         .get(USER_AGENT)
         .and_then(|value| value.to_str().ok());
@@ -71,6 +80,9 @@ async fn login_handler(
         .await
         .map_err(ApiError::internal)?;
     let Some(user) = user else {
+        service::redis::record_login_failure(&state.redis, &payload.username, &ip)
+            .await
+            .map_err(ApiError::internal)?;
         let _ = service::login_log::record(
             &state.db,
             None,
@@ -97,6 +109,9 @@ async fn login_handler(
         return Err(ApiError::forbidden("user account is disabled"));
     }
     if !service::user::verify_password(&user.password_hash, &payload.password) {
+        service::redis::record_login_failure(&state.redis, &payload.username, &ip)
+            .await
+            .map_err(ApiError::internal)?;
         let _ = service::login_log::record(
             &state.db,
             Some(user.id),
@@ -111,6 +126,9 @@ async fn login_handler(
     }
 
     let (user, token, expires_at) = service::user::record_login(&state.db, user, &ip)
+        .await
+        .map_err(ApiError::internal)?;
+    service::redis::clear_login_failures(&state.redis, &payload.username, &ip)
         .await
         .map_err(ApiError::internal)?;
     let _ = service::login_log::record(

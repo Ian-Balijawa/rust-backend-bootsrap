@@ -1,3 +1,4 @@
+pub mod file;
 pub mod login_log;
 pub mod scheduler_task;
 pub mod session;

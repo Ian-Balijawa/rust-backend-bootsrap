@@ -1,6 +1,8 @@
-use crate::model::user;
+use crate::model::{session, user};
 use chrono::{Duration, Utc};
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, Statement};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -32,15 +34,13 @@ pub async fn create_session(
 ) -> Result<(String, chrono::DateTime<Utc>), DbErr> {
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::hours(SESSION_HOURS);
-    db.execute_raw(Statement::from_sql_and_values(
-        db.get_database_backend(),
-        "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-        [
-            token.clone().into(),
-            user_id.into(),
-            expires_at.to_rfc3339().into(),
-        ],
-    ))
+    session::ActiveModel {
+        token: Set(token.clone()),
+        user_id: Set(user_id),
+        expires_at: Set(expires_at),
+        ..Default::default()
+    }
+    .insert(db)
     .await?;
     Ok((token, expires_at))
 }
@@ -49,23 +49,19 @@ pub async fn authenticate(
     db: &DatabaseConnection,
     token: &str,
 ) -> Result<Option<AuthenticatedUser>, DbErr> {
-    let row = user::Entity::find()
-        .from_raw_sql(Statement::from_sql_and_values(
-            db.get_database_backend(),
-            r#"
-            SELECT u.id, u.username, u.password_hash, u.email, u.is_active,
-                   u.created_at, u.updated_at, u.last_login_at, u.last_login_ip
-            FROM users u
-            JOIN sessions s ON s.user_id = u.id
-            WHERE s.token = ? AND s.expires_at > ?
-            "#,
-            [token.into(), Utc::now().to_rfc3339().into()],
-        ))
+    let session = session::Entity::find_by_id(token)
+        .filter(session::Column::ExpiresAt.gt(Utc::now()))
         .one(db)
         .await?;
-    let Some(user) = row else {
+    let Some(session) = session else {
         return Ok(None);
     };
+    let Some(user) = user::Entity::find_by_id(session.user_id).one(db).await? else {
+        return Ok(None);
+    };
+    if !user.is_active || session.revoked_at.is_some() {
+        return Ok(None);
+    }
 
     let permissions = crate::service::rbac::permissions_for_user(db, user.id)
         .await?
@@ -87,11 +83,6 @@ pub async fn authenticate(
 }
 
 pub async fn delete_session(db: &DatabaseConnection, token: &str) -> Result<(), DbErr> {
-    db.execute_raw(Statement::from_sql_and_values(
-        db.get_database_backend(),
-        "DELETE FROM sessions WHERE token = ?",
-        [token.into()],
-    ))
-    .await?;
+    session::Entity::delete_by_id(token).exec(db).await?;
     Ok(())
 }

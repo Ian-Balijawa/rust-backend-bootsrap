@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod common;
+pub mod file;
 pub mod health;
 pub mod scheduler;
 pub mod system_config;
@@ -19,6 +20,7 @@ pub fn create_router() -> Router<AppState> {
         .merge(health::router())
         .nest("/user", user::router())
         .nest("/tasks", task::router())
+        .nest("/files", file::router())
         .nest("/scheduler", scheduler::router())
         .nest("/system-config", system_config::router())
         .fallback(fallback)

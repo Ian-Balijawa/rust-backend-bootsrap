@@ -1,4 +1,4 @@
-use crate::model::{task, user};
+use crate::model::{file, task, user};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait,
     QueryFilter, QueryOrder, Set,
@@ -53,7 +53,10 @@ pub async fn initialize(db: &DatabaseConnection) -> Result<(), DbErr> {
         db,
         user_role.id,
         resource.id,
-        task::RBAC_PERMISSIONS.iter().copied(),
+        task::RBAC_PERMISSIONS
+            .iter()
+            .chain(file::RBAC_PERMISSIONS.iter())
+            .copied(),
     )
     .await?;
 

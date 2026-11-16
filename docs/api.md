@@ -1,6 +1,6 @@
 # API Guide
 
-The service listens on `http://127.0.0.1:8000` by default. Except for registration, login, and health checks, send:
+The service listens on `0.0.0.0:8000` by default and is reachable locally at `http://127.0.0.1:8000`. Except for registration, login, and health checks, send:
 
 ```text
 Authorization: Bearer <token>
@@ -54,3 +54,14 @@ Create or update with `{"content":"text or serialized JSON"}`.
 - `GET /app-info`: `system_config:read`
 
 Permission markers live in `src/api/auth.rs`. SeaORM RBAC stores them in its `sea_orm_*` tables under the logical `api` resource. Add `Required<PermissionType>` to a handler to perform authentication and authorization before business logic runs.
+
+## Files
+
+All file routes require a Bearer token. Users can access their own files; administrators with `user:manage` can access any file.
+
+- `POST /files/` (`file:write`): stream a raw body with `X-File-Name` (up to 255 bytes, no path separators) and optional `Content-Type`; returns HTTP 201 and metadata. Exceeding `MAX_UPLOAD_BYTES` returns 413.
+- `GET /files/{id}` (`file:read`): metadata.
+- `GET /files/{id}/download` (`file:read`): streams bytes with a download filename.
+- `DELETE /files/{id}` (`file:write`): deletes metadata and bytes.
+
+`GET /live` reports process liveness. `GET /health` checks PostgreSQL and Redis; it returns 503 when either is unavailable. Login returns 429 after five failed attempts for the same username and TCP peer IP within 15 minutes.

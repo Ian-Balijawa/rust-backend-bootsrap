@@ -12,6 +12,8 @@
 .DS_Store
 
 .env
+config.local.ini
+uploads/
 
 node_modules/
 
