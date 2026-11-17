@@ -35,6 +35,7 @@ fn database_kind(db_url: &str) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+#[utoipa::path(get, path = "/health", tag = "health", responses((status = 200, description = "Dependency health")))]
 pub(crate) async fn health_handler(
     State(state): State<AppState>,
 ) -> Result<Json<ApiResponse<HealthResponse>>, ApiError> {
@@ -64,6 +65,19 @@ pub(crate) async fn health_handler(
     })))
 }
 
+#[utoipa::path(get, path = "/ready", tag = "health", responses((status = 200, description = "Readiness")))]
+pub(crate) async fn ready_handler(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<HealthResponse>>, ApiError> {
+    health_handler(State(state)).await
+}
+
+#[utoipa::path(get, path = "/live", tag = "health", responses((status = 200, description = "Liveness")))]
+pub(crate) async fn live_handler() -> &'static str {
+    "ok"
+}
+
+#[utoipa::path(get, path = "/app-info", tag = "health", responses((status = 200, description = "Application information")))]
 pub(crate) async fn config_handler(
     State(state): State<AppState>,
     _permission: Required<SystemConfigRead>,

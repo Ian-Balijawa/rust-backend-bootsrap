@@ -33,6 +33,7 @@ pub(crate) struct CreateSchedulerTaskRequest {
     max_retries: Option<u32>,
 }
 
+#[utoipa::path(get, path = "/api/v1/scheduler/tasks", tag = "scheduler", security(("bearerAuth" = [])), responses((status = 200, description = "List scheduled tasks")))]
 pub(crate) async fn list_tasks_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerRead>,
@@ -47,6 +48,7 @@ pub(crate) async fn list_tasks_handler(
     Json(ApiResponse::ok(tasks))
 }
 
+#[utoipa::path(get, path = "/api/v1/scheduler/tasks/{id}", tag = "scheduler", security(("bearerAuth" = [])), responses((status = 200, description = "Get scheduled task")))]
 pub(crate) async fn get_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerRead>,
@@ -60,6 +62,7 @@ pub(crate) async fn get_task_handler(
     Ok(Json(ApiResponse::ok(task.to_info())))
 }
 
+#[utoipa::path(get, path = "/api/v1/scheduler/tasks/{id}/executions", tag = "scheduler", security(("bearerAuth" = [])), responses((status = 200, description = "List task executions")))]
 pub(crate) async fn list_task_executions_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerRead>,
@@ -77,6 +80,7 @@ pub(crate) async fn list_task_executions_handler(
     Ok(Json(ApiResponse::ok(executions)))
 }
 
+#[utoipa::path(post, path = "/api/v1/scheduler/tasks", tag = "scheduler", security(("bearerAuth" = [])), responses((status = 200, description = "Create scheduled task")))]
 pub(crate) async fn create_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerWrite>,
@@ -146,6 +150,7 @@ pub(crate) async fn create_task_handler(
     Ok(Json(ApiResponse::ok(serde_json::json!({ "id": task_id }))))
 }
 
+#[utoipa::path(post, path = "/api/v1/scheduler/tasks/{id}/run", tag = "scheduler", security(("bearerAuth" = [])), responses((status = 200, description = "Run scheduled task")))]
 pub(crate) async fn run_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerWrite>,
@@ -160,6 +165,7 @@ pub(crate) async fn run_task_handler(
     }
 }
 
+#[utoipa::path(delete, path = "/api/v1/scheduler/tasks/{id}", tag = "scheduler", security(("bearerAuth" = [])), responses((status = 200, description = "Delete scheduled task")))]
 pub(crate) async fn delete_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerWrite>,

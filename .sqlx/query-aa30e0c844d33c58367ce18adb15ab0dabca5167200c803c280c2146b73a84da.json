@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) FROM notes\n         WHERE owner_id = $1 AND deleted_at IS NULL\n         AND ($2::text IS NULL OR title ILIKE '%' || $2 || '%')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "aa30e0c844d33c58367ce18adb15ab0dabca5167200c803c280c2146b73a84da"
+}

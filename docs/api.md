@@ -32,6 +32,18 @@ Passwords require 8 to 1024 characters. Email is trimmed and normalized to lower
 
 Pages start at 1; `per_page` defaults to 20 and is capped at 100. List data contains `items` and `meta` with `page`, `per_page`, `total`, and `total_pages`. A task belonging to another user returns 404.
 
+## Notes
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v1/notes` | Create with `title` and `body` |
+| GET | `/api/v1/notes` | List own notes with `page`, `per_page`, optional `search`, and `sort` |
+| GET | `/api/v1/notes/{id}` | Read own note |
+| PATCH | `/api/v1/notes/{id}` | Update optional `title` or `body` |
+| DELETE | `/api/v1/notes/{id}` | Soft delete, returns 204 |
+
+Notes use UUIDv7 IDs. `per_page` defaults to 20 and is capped at 100. `search` filters the title. Allowed sorts are `created_asc`, `created_desc` (default), `title_asc`, and `title_desc`. Other users' notes return 404. The notes repository uses compile-checked SQLx queries and the existing shared PostgreSQL pool.
+
 ## Files
 
 | Method | Path | Purpose |

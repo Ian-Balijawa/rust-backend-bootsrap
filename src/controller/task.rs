@@ -86,6 +86,7 @@ fn task_error(error: service::task::TaskError) -> ApiError {
     }
 }
 
+#[utoipa::path(get, path = "/api/v1/tasks", tag = "task", security(("bearerAuth" = [])), responses((status = 200, description = "List tasks")))]
 pub(crate) async fn list_tasks_handler(
     State(state): State<AppState>,
     user: Required<TaskRead>,
@@ -110,6 +111,7 @@ pub(crate) async fn list_tasks_handler(
     })))
 }
 
+#[utoipa::path(get, path = "/api/v1/tasks/{id}", tag = "task", security(("bearerAuth" = [])), responses((status = 200, description = "Get task")))]
 pub(crate) async fn get_task_handler(
     State(state): State<AppState>,
     user: Required<TaskRead>,
@@ -121,6 +123,7 @@ pub(crate) async fn get_task_handler(
     Ok(Json(ApiResponse::ok(task.into())))
 }
 
+#[utoipa::path(post, path = "/api/v1/tasks", tag = "task", security(("bearerAuth" = [])), responses((status = 201, description = "Create task")))]
 pub(crate) async fn create_task_handler(
     State(state): State<AppState>,
     user: Required<TaskWrite>,
@@ -132,6 +135,7 @@ pub(crate) async fn create_task_handler(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(task.into()))))
 }
 
+#[utoipa::path(patch, path = "/api/v1/tasks/{id}", tag = "task", security(("bearerAuth" = [])), responses((status = 200, description = "Update task")))]
 pub(crate) async fn update_task_handler(
     State(state): State<AppState>,
     user: Required<TaskWrite>,
@@ -150,6 +154,7 @@ pub(crate) async fn update_task_handler(
     Ok(Json(ApiResponse::ok(task.into())))
 }
 
+#[utoipa::path(delete, path = "/api/v1/tasks/{id}", tag = "task", security(("bearerAuth" = [])), responses((status = 204, description = "Delete task")))]
 pub(crate) async fn delete_task_handler(
     State(state): State<AppState>,
     user: Required<TaskWrite>,

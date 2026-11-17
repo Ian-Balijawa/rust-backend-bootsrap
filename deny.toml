@@ -1,0 +1,4 @@
+[advisories]
+ignore = [
+    { id = "RUSTSEC-2026-0459", reason = "SQLx 0.9 pins the affected SQLite binding used only by in-memory scheduler tests; production uses PostgreSQL." },
+]

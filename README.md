@@ -4,7 +4,7 @@ A Rust JSON API starter for a separate React client, with Axum, SeaORM, PostgreS
 
 ## Quick start
 
-Requires Rust and Docker Compose. `make services` starts PostgreSQL and Redis on loopback ports 15432 and 16379, leaving the standard ports free for other local services. Override the published ports with `POSTGRES_HOST_PORT` and `REDIS_HOST_PORT`, and set matching `DATABASE_URL` and `REDIS_URL` values for the API.
+Requires Rust and Docker Compose. `make up` starts PostgreSQL and Redis on loopback ports 15432 and 16379, leaving the standard ports free for other local services. Override the published ports with `POSTGRES_HOST_PORT` and `REDIS_HOST_PORT`, and set matching `DATABASE_URL` and `REDIS_URL` values for the API.
 
 ```sh
 make services
@@ -12,7 +12,7 @@ cp .env.example .env
 make dev
 ```
 
-`make dev` starts the services if needed, applies migrations and RBAC seeds, then starts the API on `0.0.0.0:8000`. `make migrate` runs migrations without starting the API. The API refuses to start while migrations are pending. `make verify` runs formatting, Clippy, and unit tests. `make services-down` stops the containers without deleting their volumes.
+`make dev` starts the services if needed, applies migrations and RBAC seeds, then starts the API on `0.0.0.0:8000`. `make migrate` runs migrations without starting the API. The API refuses to start while migrations are pending. `make verify` runs formatting, Clippy, and unit tests. `make down` stops the containers without deleting their volumes. If you already have a `.env`, check its `DATABASE_URL` and `REDIS_URL`: they override the values in `config.ini` and must match the Compose ports and credentials.
 
 The API hardening migration invalidates older plaintext sessions, so users must sign in again after it is applied. It also adds a case-insensitive unique email index; resolve any existing emails that differ only in letter case before migrating.
 
@@ -28,11 +28,14 @@ If `--password` is omitted, the generated password is printed once. Public signu
 
 ## API
 
+Browse the API reference at `http://localhost:8000/swagger-ui/` or download its OpenAPI JSON from `http://localhost:8000/api-docs/openapi.json`.
+
 - `GET /live`: process liveness.
 - `GET /health`: checks PostgreSQL and Redis and reports scheduler state.
 - `GET /ready`: readiness check for PostgreSQL and Redis.
 - `POST /api/v1/auth/signup`, `POST /api/v1/auth/signin`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/signout`, `GET /api/v1/auth/me`, `POST /api/v1/auth/change-password`, `POST /api/v1/auth/forgot-password`, `POST /api/v1/auth/reset-password`: user access. Signin accepts an email and password and returns a 15-minute JWT access token plus a 14-day rotating refresh token. Passwords use Argon2id; existing bcrypt hashes are upgraded at signin. Reset emails use single-use 15-minute tokens.
 - `GET/POST /api/v1/tasks`, `GET/PATCH/DELETE /api/v1/tasks/{id}`: owner-scoped task data. Lists accept `page` and `per_page` (up to 100). Deletion is soft.
+- `GET/POST /api/v1/notes`, `GET/PATCH/DELETE /api/v1/notes/{id}`: owner-scoped notes with UUIDv7 IDs, pagination, title search, sort, and soft deletion. This resource uses compile-checked SQLx queries.
 - `/api/v1/scheduler`, `/api/v1/system-config`: scheduler and configuration management.
 - `POST /api/v1/files/`, `GET /api/v1/files/{id}`, `GET /api/v1/files/{id}/download`, `DELETE /api/v1/files/{id}`: file upload, metadata, download, and soft deletion.
 

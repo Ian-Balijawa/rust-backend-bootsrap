@@ -41,6 +41,7 @@ pub async fn find_any<C: ConnectionTrait>(
     session::Entity::find_by_id(token_hash(token)).one(db).await
 }
 
+#[cfg(test)]
 pub async fn find_valid<C: ConnectionTrait>(
     db: &C,
     token: &str,

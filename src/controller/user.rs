@@ -16,6 +16,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use utoipa::ToSchema;
 use validator::Validate;
 
 fn deserialize_email<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -26,7 +27,7 @@ where
     Ok(email.trim().to_lowercase())
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub(crate) struct LoginRequest {
     #[serde(deserialize_with = "deserialize_email")]
     #[validate(email)]
@@ -46,7 +47,7 @@ pub(crate) struct LoginResponse {
     last_login_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub(crate) struct RegisterRequest {
     #[validate(length(min = 1, max = 100))]
     username: String,
@@ -70,12 +71,12 @@ pub(crate) struct CurrentUserResponse {
     permissions: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub(crate) struct ReplaceRoleRequest {
     role: String,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub(crate) struct ChangePasswordRequest {
     #[validate(length(min = 1))]
     current_password: String,
@@ -83,14 +84,14 @@ pub(crate) struct ChangePasswordRequest {
     new_password: String,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub(crate) struct ForgotPasswordRequest {
     #[serde(deserialize_with = "deserialize_email")]
     #[validate(email)]
     email: String,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub(crate) struct ResetPasswordRequest {
     #[validate(length(equal = 64))]
     token: String,
@@ -98,12 +99,13 @@ pub(crate) struct ResetPasswordRequest {
     new_password: String,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 pub(crate) struct RefreshRequest {
     #[validate(length(equal = 64))]
     refresh_token: String,
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/signin", tag = "user", request_body = LoginRequest, responses((status = 200, description = "Sign in")))]
 pub(crate) async fn login_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
@@ -143,6 +145,7 @@ pub(crate) async fn login_handler(
     })))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/change-password", tag = "user", request_body = ChangePasswordRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Change password")))]
 pub(crate) async fn change_password_handler(
     State(state): State<AppState>,
     user: AuthenticatedUser,
@@ -164,6 +167,7 @@ pub(crate) async fn change_password_handler(
     Ok(Json(ApiResponse::message("password changed")))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/forgot-password", tag = "user", request_body = ForgotPasswordRequest, responses((status = 200, description = "Request password reset")))]
 pub(crate) async fn forgot_password_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
@@ -190,6 +194,7 @@ pub(crate) async fn forgot_password_handler(
     )))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/reset-password", tag = "user", request_body = ResetPasswordRequest, responses((status = 200, description = "Reset password")))]
 pub(crate) async fn reset_password_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
@@ -222,6 +227,7 @@ pub(crate) async fn reset_password_handler(
     Ok(Json(ApiResponse::message("password reset")))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/signup", tag = "user", request_body = RegisterRequest, responses((status = 201, description = "Sign up")))]
 pub(crate) async fn register_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
@@ -267,6 +273,7 @@ pub(crate) async fn register_handler(
     ))
 }
 
+#[utoipa::path(get, path = "/api/v1/auth/me", tag = "user", security(("bearerAuth" = [])), responses((status = 200, description = "Current user")))]
 pub(crate) async fn me_handler(user: AuthenticatedUser) -> Json<ApiResponse<CurrentUserResponse>> {
     let mut permissions: Vec<_> = user.permissions.iter().cloned().collect();
     permissions.sort();
@@ -283,6 +290,7 @@ pub(crate) async fn me_handler(user: AuthenticatedUser) -> Json<ApiResponse<Curr
     }))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/signout", tag = "user", request_body = RefreshRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Sign out")))]
 pub(crate) async fn logout_handler(
     State(state): State<AppState>,
     user: AuthenticatedUser,
@@ -297,6 +305,7 @@ pub(crate) async fn logout_handler(
     Ok(Json(ApiResponse::message("logged out")))
 }
 
+#[utoipa::path(post, path = "/api/v1/auth/refresh", tag = "user", request_body = RefreshRequest, responses((status = 200, description = "Rotate refresh token")))]
 pub(crate) async fn refresh_handler(
     State(state): State<AppState>,
     ValidatedJson(payload): ValidatedJson<RefreshRequest>,
@@ -321,6 +330,7 @@ pub(crate) async fn refresh_handler(
     })))
 }
 
+#[utoipa::path(put, path = "/api/v1/auth/{id}/role", tag = "user", request_body = ReplaceRoleRequest, security(("bearerAuth" = [])), responses((status = 200, description = "Replace user role")))]
 pub(crate) async fn replace_role_handler(
     State(state): State<AppState>,
     _permission: Required<UserManage>,

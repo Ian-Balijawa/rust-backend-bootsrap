@@ -1,5 +1,6 @@
 pub mod file;
 pub mod login_log;
+pub mod note;
 pub mod password_reset;
 pub mod scheduler_task;
 pub mod session;

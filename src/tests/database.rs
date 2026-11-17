@@ -110,6 +110,36 @@ async fn postgres_redis_and_file_roundtrip() {
         crate::service::task::get(&db, user.id, task.id).await,
         Err(crate::service::task::TaskError::NotFound)
     ));
+
+    let pool = db.get_postgres_connection_pool();
+    let note = crate::service::note::create(pool, user.id, "private note", "secret body")
+        .await
+        .unwrap();
+    assert!(matches!(
+        crate::service::note::get(pool, other.id, note.id).await,
+        Err(crate::service::note::NoteError::NotFound)
+    ));
+    assert!(matches!(
+        crate::service::note::update(pool, other.id, note.id, Some("changed"), None).await,
+        Err(crate::service::note::NoteError::NotFound)
+    ));
+    assert!(matches!(
+        crate::service::note::delete(pool, other.id, note.id).await,
+        Err(crate::service::note::NoteError::NotFound)
+    ));
+    let (notes, total) =
+        crate::service::note::list(pool, user.id, 1, 20, Some("private"), Some("title_asc"))
+            .await
+            .unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(notes[0].id, note.id);
+    crate::service::note::delete(pool, user.id, note.id)
+        .await
+        .unwrap();
+    assert!(matches!(
+        crate::service::note::get(pool, user.id, note.id).await,
+        Err(crate::service::note::NoteError::NotFound)
+    ));
     crate::service::auth::signout(&db, user.id, &token)
         .await
         .unwrap();
@@ -215,6 +245,64 @@ async fn postgres_redis_and_file_roundtrip() {
     let (token, _) = crate::service::auth::issue_access_token(&db, &state.config, user.id)
         .await
         .unwrap();
+    let (another_token, _) = crate::service::auth::issue_access_token(&db, &state.config, user.id)
+        .await
+        .unwrap();
+    assert_ne!(token, another_token);
+    let mut wrong_audience = state.config.clone();
+    wrong_audience.jwt_audience = "another-client".to_string();
+    assert!(
+        crate::service::auth::authenticate_access(&db, &wrong_audience, &token)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let canonical_notes = crate::routes::create_router()
+        .with_state(state.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/notes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(canonical_notes.status(), StatusCode::UNAUTHORIZED);
+    let note_app = crate::routes::note::router().with_state(state.clone());
+    let note_created = note_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .method("POST")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"title":"HTTP note","body":"private"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(note_created.status(), StatusCode::CREATED);
+    let note_body = to_bytes(note_created.into_body(), 4096).await.unwrap();
+    let note_json: serde_json::Value = serde_json::from_slice(&note_body).unwrap();
+    let note_id = note_json["data"]["id"].as_str().unwrap();
+    let (other_access, _) = crate::service::auth::issue_access_token(&db, &state.config, other.id)
+        .await
+        .unwrap();
+    let forbidden_note = note_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/{note_id}"))
+                .header("authorization", format!("Bearer {other_access}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(forbidden_note.status(), StatusCode::NOT_FOUND);
     let app = crate::routes::file::router().with_state(state.clone());
     let unauthorized = app
         .clone()
@@ -298,7 +386,12 @@ async fn postgres_redis_and_file_roundtrip() {
     tokio::fs::remove_dir(http_dir).await.unwrap();
 
     let user_app = crate::routes::user::router().with_state(state.clone());
-    let peer: std::net::SocketAddr = "127.0.0.1:42000".parse().unwrap();
+    let peer: std::net::SocketAddr = format!(
+        "127.0.0.{}:42000",
+        uuid::Uuid::new_v4().as_bytes()[0].max(1)
+    )
+    .parse()
+    .unwrap();
     let signup_email = format!("signup-{}@example.com", uuid::Uuid::new_v4());
     let mut signup = Request::builder()
         .uri("/signup")

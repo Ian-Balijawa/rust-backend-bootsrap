@@ -1,5 +1,6 @@
 pub mod file;
 pub mod health;
+pub mod note;
 pub mod scheduler;
 pub mod system_config;
 pub mod task;

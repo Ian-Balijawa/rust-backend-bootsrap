@@ -58,6 +58,7 @@ fn upload_name(headers: &HeaderMap) -> Result<&str, ApiError> {
     Ok(name)
 }
 
+#[utoipa::path(post, path = "/api/v1/files", tag = "file", security(("bearerAuth" = [])), responses((status = 201, description = "Upload file")))]
 pub(crate) async fn upload(
     State(state): State<AppState>,
     user: Required<FileWrite>,
@@ -109,6 +110,7 @@ pub(crate) async fn upload(
     ))
 }
 
+#[utoipa::path(get, path = "/api/v1/files/{id}", tag = "file", security(("bearerAuth" = [])), responses((status = 200, description = "Get file metadata")))]
 pub(crate) async fn metadata(
     State(state): State<AppState>,
     user: Required<FileRead>,
@@ -118,6 +120,7 @@ pub(crate) async fn metadata(
     Ok(Json(ApiResponse::ok(FileResponse::from(model))))
 }
 
+#[utoipa::path(get, path = "/api/v1/files/{id}/download", tag = "file", security(("bearerAuth" = [])), responses((status = 200, description = "Download file")))]
 pub(crate) async fn download(
     State(state): State<AppState>,
     user: Required<FileRead>,
@@ -166,6 +169,7 @@ pub(crate) async fn download(
     Ok(response)
 }
 
+#[utoipa::path(delete, path = "/api/v1/files/{id}", tag = "file", security(("bearerAuth" = [])), responses((status = 200, description = "Delete file")))]
 pub(crate) async fn delete(
     State(state): State<AppState>,
     user: Required<FileWrite>,

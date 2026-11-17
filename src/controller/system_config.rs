@@ -18,6 +18,7 @@ pub(crate) struct ConfigContent {
     content: String,
 }
 
+#[utoipa::path(get, path = "/api/v1/system-config", tag = "system_config", security(("bearerAuth" = [])), responses((status = 200, description = "List system configuration")))]
 pub(crate) async fn list_handler(
     State(state): State<AppState>,
     _permission: Required<SystemConfigRead>,
@@ -29,6 +30,7 @@ pub(crate) async fn list_handler(
     )))
 }
 
+#[utoipa::path(get, path = "/api/v1/system-config/{key}", tag = "system_config", security(("bearerAuth" = [])), responses((status = 200, description = "Get system configuration")))]
 pub(crate) async fn get_handler(
     State(state): State<AppState>,
     _permission: Required<SystemConfigRead>,
@@ -41,6 +43,7 @@ pub(crate) async fn get_handler(
     Ok(Json(ApiResponse::ok(config)))
 }
 
+#[utoipa::path(post, path = "/api/v1/system-config/{key}", tag = "system_config", security(("bearerAuth" = [])), responses((status = 200, description = "Create system configuration")))]
 pub(crate) async fn create_handler(
     State(state): State<AppState>,
     _permission: Required<SystemConfigWrite>,
@@ -56,6 +59,7 @@ pub(crate) async fn create_handler(
     Ok(Json(ApiResponse::ok(config)))
 }
 
+#[utoipa::path(put, path = "/api/v1/system-config/{key}", tag = "system_config", security(("bearerAuth" = [])), responses((status = 200, description = "Update system configuration")))]
 pub(crate) async fn update_handler(
     State(state): State<AppState>,
     _permission: Required<SystemConfigWrite>,
@@ -69,6 +73,7 @@ pub(crate) async fn update_handler(
     Ok(Json(ApiResponse::ok(config)))
 }
 
+#[utoipa::path(delete, path = "/api/v1/system-config/{key}", tag = "system_config", security(("bearerAuth" = [])), responses((status = 200, description = "Delete system configuration")))]
 pub(crate) async fn delete_handler(
     State(state): State<AppState>,
     _permission: Required<SystemConfigWrite>,

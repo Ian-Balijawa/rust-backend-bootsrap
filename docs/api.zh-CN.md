@@ -71,6 +71,10 @@ Content-Type: application/json
 
 创建时用户 ID 来自 token。更新时 `action`、`schedule_time` 均为可选字段。删除为软删除。
 
+## 笔记
+
+`/api/v1/notes` 提供新增、分页列表、读取、PATCH 更新和软删除。笔记使用 UUIDv7，按用户隔离；访问其他用户的笔记返回 404。列表支持 `page`、`per_page`（最多 100）、标题搜索 `search`，以及 `created_asc`、`created_desc`、`title_asc`、`title_desc` 排序。
+
 ## 调度器
 
 - `GET /api/v1/scheduler/tasks`：`scheduler:read`

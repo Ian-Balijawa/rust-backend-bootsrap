@@ -31,7 +31,10 @@ clap = { version = "4.6.6", features = ["derive"] }
 argon2 = "0.6.0"
 validator = { version = "0.21.0", features = ["derive"] }
 dotenvy = "0.15.7"
-jsonwebtoken = "12.0.0"
+jsonwebtoken = { version = "12.0.0", default-features = false, features = ["aws_lc_rs"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["postgres", "macros", "uuid", "chrono", "runtime-tokio", "tls-rustls", "sqlx-toml"] }
+utoipa = "6.0.0"
+utoipa-swagger-ui = { version = "10.0.2", features = ["axum"] }
 
 [dev-dependencies]
 sea-orm = { version = "2.0.2", features = ["sqlx-sqlite"] }

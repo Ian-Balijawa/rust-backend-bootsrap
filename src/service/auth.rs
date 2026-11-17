@@ -24,6 +24,7 @@ struct AccessClaims {
     exp: i64,
     iss: String,
     aud: String,
+    jti: String,
 }
 
 const ACCESS_MINUTES: i64 = 15;
@@ -57,6 +58,7 @@ pub async fn issue_access_token(
         exp: expires_at.timestamp(),
         iss: config.jwt_issuer.clone(),
         aud: config.jwt_audience.clone(),
+        jti: Uuid::now_v7().to_string(),
     };
     let key = EncodingKey::from_secret(config.jwt_secret.as_bytes())?;
     let token = encode(&Header::new(Algorithm::HS256), &claims, &key)?;

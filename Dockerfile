@@ -1,6 +1,12 @@
 FROM rust:1.99-bookworm AS build
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y cmake \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
+COPY .cargo ./.cargo
+COPY .sqlx ./.sqlx
+COPY sqlx.toml ./
 COPY src ./src
 RUN cargo build --locked --release
 
